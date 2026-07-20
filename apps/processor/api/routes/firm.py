@@ -15,6 +15,7 @@ FastAPI router providing:
 import json
 import uuid
 import sqlite3
+import bcrypt
 from datetime import datetime
 from typing import Optional, List, Dict, Any
 
@@ -24,6 +25,14 @@ from loguru import logger
 from database.db import get_db_connection
 
 router = APIRouter(prefix="/firm", tags=["CA Firm Management"])
+
+# ── Auth helpers ──────────────────────────────────────────────────────────────
+
+def hash_password(plain: str) -> str:
+    return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
+
+def verify_password(plain: str, hashed: str) -> bool:
+    return bcrypt.checkpw(plain.encode(), hashed.encode())
 
 # ── DB Schema Init ────────────────────────────────────────────────────────────
 
@@ -49,9 +58,21 @@ def init_firm_schema():
         branch TEXT DEFAULT 'Head Office',
         permissions TEXT, -- JSON permissions list
         status TEXT DEFAULT 'Active',
+        password_hash TEXT,
+        is_admin INTEGER DEFAULT 0,
         created_at TEXT DEFAULT (datetime('now'))
     )
     """)
+
+    # Migrate: add columns to existing firm_staff if they don't exist yet
+    try:
+        cursor.execute("ALTER TABLE firm_staff ADD COLUMN password_hash TEXT")
+    except Exception:
+        pass
+    try:
+        cursor.execute("ALTER TABLE firm_staff ADD COLUMN is_admin INTEGER DEFAULT 0")
+    except Exception:
+        pass
 
     # 3. Tasks Table
     cursor.execute("""
@@ -149,12 +170,36 @@ def init_firm_schema():
     cursor.execute("SELECT COUNT(*) as c FROM firm_staff")
     if cursor.fetchone()["c"] == 0:
         default_staff = [
-            ("staff-1", "A. K. Mehta", "Managing Partner", "mehta@mehtasen.com", "Mumbai Head Office", json.dumps(["Manage Users", "Approve Reports", "Configure Rules", "Delete Files", "Upload Documents"])),
-            ("staff-2", "Aditya Sen", "Partner", "sen@mehtasen.com", "Mumbai Head Office", json.dumps(["Approve Reports", "Export Reports", "Upload Documents"])),
-            ("staff-3", "Ravi Verma", "Senior Auditor", "ravi@mehtasen.com", "Pune Branch", json.dumps(["Edit Ledger", "Export Reports", "Upload Documents"])),
-            ("staff-4", "S. Sharma", "Article Assistant", "sharma@mehtasen.com", "Pune Branch", json.dumps(["Upload Documents", "Edit Ledger"]))
+            ("staff-1", "A. K. Mehta", "Managing Partner", "mehta@mehtasen.com", "Mumbai Head Office", json.dumps(["Manage Users", "Approve Reports", "Configure Rules", "Delete Files", "Upload Documents"]), None, 0),
+            ("staff-2", "Aditya Sen", "Partner", "sen@mehtasen.com", "Mumbai Head Office", json.dumps(["Approve Reports", "Export Reports", "Upload Documents"]), None, 0),
+            ("staff-3", "Ravi Verma", "Senior Auditor", "ravi@mehtasen.com", "Pune Branch", json.dumps(["Edit Ledger", "Export Reports", "Upload Documents"]), None, 0),
+            ("staff-4", "S. Sharma", "Article Assistant", "sharma@mehtasen.com", "Pune Branch", json.dumps(["Upload Documents", "Edit Ledger"]), None, 0)
         ]
-        cursor.executemany("INSERT INTO firm_staff (id, name, role, email, branch, permissions) VALUES (?, ?, ?, ?, ?, ?)", default_staff)
+        cursor.executemany("INSERT INTO firm_staff (id, name, role, email, branch, permissions, password_hash, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", default_staff)
+
+    # ── Seed Super-Admin account (idempotent) ─────────────────────────────────
+    ADMIN_EMAIL = "anandhuabhi112@gmail.com"
+    ADMIN_PASSWORD = "Anandu@2006"
+    cursor.execute("SELECT id FROM firm_staff WHERE email = ?", (ADMIN_EMAIL,))
+    existing_admin = cursor.fetchone()
+    if existing_admin:
+        # Update existing row to ensure it has admin flag + password hash
+        cursor.execute(
+            "UPDATE firm_staff SET is_admin = 1, password_hash = ? WHERE email = ?",
+            (hash_password(ADMIN_PASSWORD), ADMIN_EMAIL)
+        )
+    else:
+        admin_hash = hash_password(ADMIN_PASSWORD)
+        all_permissions = json.dumps([
+            "Manage Users", "Approve Reports", "Configure Rules",
+            "Delete Files", "Upload Documents", "Edit Ledger",
+            "Export Reports", "System Settings", "View Audit Trail"
+        ])
+        cursor.execute(
+            "INSERT INTO firm_staff (id, name, role, email, branch, permissions, password_hash, is_admin) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+            ("admin-1", "Anandu G", "Super Admin", ADMIN_EMAIL, "Head Office", all_permissions, admin_hash, 1)
+        )
+    logger.info(f"Admin account seeded/verified: {ADMIN_EMAIL}")
 
     # Seed Default Compliance Dates if empty
     cursor.execute("SELECT COUNT(*) as c FROM firm_compliance_dates")
@@ -193,6 +238,85 @@ try:
     init_firm_schema()
 except Exception as e:
     logger.warning(f"Firm schema init warning: {e}")
+
+
+# ── Authentication Endpoints ──────────────────────────────────────────────────
+
+@router.post("/auth/login")
+async def login(
+    email: str = Form(...),
+    password: str = Form(...)
+):
+    """Authenticate a staff member and return their profile."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM firm_staff WHERE email = ? AND status = 'Active'", (email,))
+    staff = cursor.fetchone()
+    conn.close()
+
+    if not staff:
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    password_hash = staff["password_hash"]
+    if not password_hash or not verify_password(password, password_hash):
+        raise HTTPException(status_code=401, detail="Invalid email or password")
+
+    return {
+        "id": staff["id"],
+        "name": staff["name"],
+        "email": staff["email"],
+        "role": staff["role"],
+        "branch": staff["branch"],
+        "is_admin": bool(staff["is_admin"]),
+        "permissions": json.loads(staff["permissions"] or "[]"),
+    }
+
+
+@router.get("/auth/me")
+async def get_me(email: str):
+    """Return staff profile by email (for session restoration)."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM firm_staff WHERE email = ?", (email,))
+    staff = cursor.fetchone()
+    conn.close()
+    if not staff:
+        raise HTTPException(status_code=404, detail="User not found")
+    return {
+        "id": staff["id"],
+        "name": staff["name"],
+        "email": staff["email"],
+        "role": staff["role"],
+        "branch": staff["branch"],
+        "is_admin": bool(staff["is_admin"]),
+        "permissions": json.loads(staff["permissions"] or "[]"),
+    }
+
+
+@router.post("/auth/set-password")
+async def set_password(
+    email: str = Form(...),
+    current_password: str = Form(...),
+    new_password: str = Form(...)
+):
+    """Allow a staff member to change their own password."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT * FROM firm_staff WHERE email = ?", (email,))
+    staff = cursor.fetchone()
+    if not staff:
+        conn.close()
+        raise HTTPException(status_code=404, detail="User not found")
+    if staff["password_hash"] and not verify_password(current_password, staff["password_hash"]):
+        conn.close()
+        raise HTTPException(status_code=401, detail="Current password incorrect")
+    cursor.execute(
+        "UPDATE firm_staff SET password_hash = ? WHERE email = ?",
+        (hash_password(new_password), email)
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "message": "Password updated successfully"}
 
 
 # ── Profile & Workspace API ──────────────────────────────────────────────────
