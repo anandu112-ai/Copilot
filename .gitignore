@@ -1,0 +1,90 @@
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.npm
+.yarn/cache
+.yarn/unplugged
+.yarn/build-state.yml
+.yarn/install-state.gz
+
+# Build outputs
+dist/
+dist-electron/
+out/
+release/
+
+# Vite
+.vite/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.whl
+.installed.cfg
+*.egg-info
+MANIFEST
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.Python
+develop-eggs/
+
+# pytest
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Runtime
+runtime/logs/
+runtime/temp/
+runtime/db/
+
+# Data
+data/database/*.db
+data/database/*.db-journal
+
+# IDE
+.vscode/settings.json
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+
+# Electron
+apps/desktop/dist/
+apps/desktop/dist-electron/
+apps/desktop/release/
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Logs
+*.log
+logs/
+
+# Test coverage
+coverage/
