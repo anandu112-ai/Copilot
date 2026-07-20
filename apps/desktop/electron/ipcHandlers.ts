@@ -102,6 +102,25 @@ export function registerIpcHandlers(
     return dbManager.getRecentActivity(limit)
   })
 
+  // Clients Database IPC Handlers
+  ipcMain.handle('db:get-clients', () => {
+    return dbManager.getClients()
+  })
+
+  ipcMain.handle('db:insert-client', (_, client: Parameters<DatabaseManager['insertClient']>[0]) => {
+    dbManager.insertClient(client)
+    return { success: true }
+  })
+
+  ipcMain.handle('db:delete-client', (_, id: string) => {
+    if (typeof id !== 'string' || id.length > 64) {
+      throw new Error('Invalid client ID')
+    }
+    dbManager.deleteClient(id)
+    return { success: true }
+  })
+
   // ── Theme ──────────────────────────────────────────────────────────────────
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
 }
+

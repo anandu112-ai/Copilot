@@ -38,7 +38,14 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:get-dashboard-stats'),
     getRecentActivity: (limit?: number) =>
       ipcRenderer.invoke('db:get-recent-activity', limit),
+    getClients: () =>
+      ipcRenderer.invoke('db:get-clients'),
+    insertClient: (client: ClientRecord) =>
+      ipcRenderer.invoke('db:insert-client', client),
+    deleteClient: (id: string) =>
+      ipcRenderer.invoke('db:delete-client', id),
   },
+
 
   // Theme
   getNativeTheme: () => ipcRenderer.invoke('theme:get'),
@@ -60,3 +67,18 @@ interface ConversionRecord {
   processingDuration: number
   pageCount: number
 }
+
+interface ClientRecord {
+  id: string
+  clientName: string
+  businessName?: string
+  clientType?: string
+  pan?: string
+  gstin?: string
+  email?: string
+  phone?: string
+  financialYear?: string
+  assignedStaff?: string
+  status?: string
+}
+

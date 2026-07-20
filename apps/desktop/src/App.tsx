@@ -5,22 +5,20 @@ import { useSettingsStore } from './stores/settingsStore'
 
 // Pages
 import DashboardPage from './pages/DashboardPage'
+import ClientsPage from './pages/ClientsPage'
+import DocumentAiPage from './pages/DocumentAiPage'
+import InvoiceProcessingPage from './pages/InvoiceProcessingPage'
+import GstReconciliationPage from './pages/GstReconciliationPage'
+import BankReconciliationPage from './pages/BankReconciliationPage'
+import AuditAssistantPage from './pages/AuditAssistantPage'
+import ReportsPage from './pages/ReportsPage'
+import SettingsPage from './pages/SettingsPage'
+import AiCopilotPage from './pages/AiCopilotPage'
+
+// Legacy / Support Pages
 import PdfToExcelPage from './pages/PdfToExcelPage'
-import DocumentIntelligencePage from './pages/DocumentIntelligencePage'
 import ChatWithDocumentsPage from './pages/ChatWithDocumentsPage'
 import DocumentManagerPage from './pages/DocumentManagerPage'
-import ClientsPage from './pages/ClientsPage'
-import AuditAssistantPage from './pages/AuditAssistantPage'
-import VouchingPage from './pages/VouchingPage'
-import ReconciliationPage from './pages/ReconciliationPage'
-import GstAssistantPage from './pages/GstAssistantPage'
-import TaxAssistantPage from './pages/TaxAssistantPage'
-import AiCopilotPage from './pages/AiCopilotPage'
-import ReportsPage from './pages/ReportsPage'
-import IntegrationsPage from './pages/IntegrationsPage'
-import HistoryPage from './pages/HistoryPage'
-import NotificationsPage from './pages/NotificationsPage'
-import SettingsPage from './pages/SettingsPage'
 import HelpPage from './pages/HelpPage'
 
 export default function App() {
@@ -45,24 +43,23 @@ export default function App() {
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
+        <Route path="clients" element={<ClientsPage />} />
+        <Route path="document-ai" element={<DocumentAiPage />} />
+        <Route path="invoice-processing" element={<InvoiceProcessingPage />} />
+        <Route path="gst-reconciliation" element={<GstReconciliationPage />} />
+        <Route path="bank-reconciliation" element={<BankReconciliationPage />} />
+        <Route path="audit" element={<AuditAssistantPage />} />
+        <Route path="reports" element={<ReportsPage />} />
+        <Route path="settings" element={<SettingsPage />} />
+        <Route path="ai-copilot" element={<AiCopilotPage />} />
+        
+        {/* Support paths */}
         <Route path="pdf-to-excel" element={<PdfToExcelPage />} />
-        <Route path="document-intelligence" element={<DocumentIntelligencePage />} />
         <Route path="chat-with-documents" element={<ChatWithDocumentsPage />} />
         <Route path="documents" element={<DocumentManagerPage />} />
-        <Route path="clients" element={<ClientsPage />} />
-        <Route path="audit" element={<AuditAssistantPage />} />
-        <Route path="vouching" element={<VouchingPage />} />
-        <Route path="reconciliation" element={<ReconciliationPage />} />
-        <Route path="gst" element={<GstAssistantPage />} />
-        <Route path="tax" element={<TaxAssistantPage />} />
-        <Route path="ai-copilot" element={<AiCopilotPage />} />
-        <Route path="reports" element={<ReportsPage />} />
-        <Route path="integrations" element={<IntegrationsPage />} />
-        <Route path="history" element={<HistoryPage />} />
-        <Route path="notifications" element={<NotificationsPage />} />
-        <Route path="settings" element={<SettingsPage />} />
         <Route path="help" element={<HelpPage />} />
       </Route>
     </Routes>
   )
 }
+

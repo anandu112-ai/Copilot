@@ -7,23 +7,14 @@ import { cn } from '../../utils/cn'
 
 const PAGE_TITLES: Record<string, string> = {
   '/dashboard': 'Dashboard',
-  '/pdf-to-excel': 'PDF to Excel Converter',
-  '/document-intelligence': 'Document Intelligence',
-  '/chat-with-documents': 'Chat with Documents',
-  '/documents': 'Document Manager',
   '/clients': 'Client Management',
-  '/audit': 'Audit Assistant',
-  '/vouching': 'Vouching Assistant',
-  '/reconciliation': 'Reconciliation',
-  '/gst': 'GST Assistant',
-  '/tax': 'Tax Assistant',
-  '/ai-copilot': 'AI Copilot',
-  '/reports': 'Reports & Analytics',
-  '/integrations': 'Integrations',
-  '/history': 'Conversion History',
-  '/notifications': 'Notifications',
+  '/document-ai': 'Document AI',
+  '/invoice-processing': 'Invoice Processing',
+  '/gst-reconciliation': 'GST Reconciliation',
+  '/bank-reconciliation': 'Bank Reconciliation',
+  '/audit': 'AI Audit Assistant',
+  '/reports': 'Reports',
   '/settings': 'Settings',
-  '/help': 'Help & About',
 }
 
 export default function TopBar() {

@@ -20,7 +20,11 @@ export interface ElectronAPI {
     deleteConversion: (id: string) => Promise<{ success: boolean }>
     getDashboardStats: () => Promise<DashboardStats>
     getRecentActivity: (limit?: number) => Promise<RecentActivityItem[]>
+    getClients: () => Promise<ClientRecord[]>
+    insertClient: (client: Omit<ClientRecord, 'created_at' | 'updated_at'>) => Promise<{ success: boolean }>
+    deleteClient: (id: string) => Promise<{ success: boolean }>
   }
+
 
   getNativeTheme: () => Promise<string>
   onThemeChange: (callback: (theme: string) => void) => () => void
@@ -95,6 +99,24 @@ export interface RecentActivityItem {
   status: string
   created_at: string
 }
+
+export interface ClientRecord {
+  id: string
+  clientName: string
+  businessName?: string
+  clientType?: string
+  pan?: string
+  gstin?: string
+  email?: string
+  phone?: string
+  financialYear?: string
+  assignedStaff?: string
+  status?: string
+  createdAt?: string
+  updatedAt?: string
+}
+
+
 
 // ── PDF Processing Types ───────────────────────────────────────────────────
 export type DocumentType =

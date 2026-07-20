@@ -175,4 +175,64 @@ export class DatabaseManager {
       LIMIT ?
     `).all(limit)
   }
+
+  // Clients Database Helper Methods
+  getClients(): unknown[] {
+    return this.db.prepare(`
+      SELECT 
+        id, 
+        client_name as clientName, 
+        business_name as businessName, 
+        client_type as clientType, 
+        pan, 
+        gstin, 
+        email, 
+        phone, 
+        financial_year as financialYear, 
+        assigned_staff as assignedStaff, 
+        status, 
+        created_at as createdAt, 
+        updated_at as updatedAt 
+      FROM clients 
+      ORDER BY created_at DESC
+    `).all()
+  }
+
+
+  insertClient(client: {
+    id: string
+    clientName: string
+    businessName?: string
+    clientType?: string
+    pan?: string
+    gstin?: string
+    email?: string
+    phone?: string
+    financialYear?: string
+    assignedStaff?: string
+    status?: string
+  }): void {
+    this.db.prepare(`
+      INSERT OR REPLACE INTO clients
+        (id, client_name, business_name, client_type, pan, gstin, email, phone, financial_year, assigned_staff, status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    `).run(
+      client.id,
+      client.clientName,
+      client.businessName || '',
+      client.clientType || '',
+      client.pan || '',
+      client.gstin || '',
+      client.email || '',
+      client.phone || '',
+      client.financialYear || '',
+      client.assignedStaff || '',
+      client.status || 'active'
+    )
+  }
+
+  deleteClient(id: string): void {
+    this.db.prepare('DELETE FROM clients WHERE id = ?').run(id)
+  }
 }
+
