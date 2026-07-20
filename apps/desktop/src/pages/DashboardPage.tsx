@@ -89,8 +89,17 @@ const defaultActivities = [
   }
 ]
 
+function getGreeting(): string {
+  const hour = new Date().getHours()
+  if (hour < 12) return 'Good Morning'
+  if (hour < 17) return 'Good Afternoon'
+  if (hour < 21) return 'Good Evening'
+  return 'Good Night'
+}
+
 export default function DashboardPage() {
   const navigate = useNavigate()
+  const [loading, setLoading] = useState(true)
   const [currentDate, setCurrentDate] = useState('')
   const [dbStats, setDbStats] = useState({
     totalConversions: 0,
@@ -124,9 +133,12 @@ export default function DashboardPage() {
         } catch (e) {
           console.error(e)
           setActivities(defaultActivities)
+        } finally {
+          setLoading(false)
         }
       } else {
         setActivities(defaultActivities)
+        setLoading(false)
       }
     }
 
@@ -193,7 +205,7 @@ export default function DashboardPage() {
       {/* Welcome Banner */}
       <div className="section-header">
         <div className="text-left">
-          <h2 className="text-2xl font-black text-surface-100 leading-tight">Good Morning, CA</h2>
+          <h2 className="text-2xl font-black text-surface-100 leading-tight">{getGreeting()}, CA</h2>
           <p className="text-xs text-surface-500 mt-1 flex items-center gap-1.5">
             <span>{currentDate}</span>
             <span>•</span>
@@ -207,9 +219,23 @@ export default function DashboardPage() {
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        {stats.map((stat, idx) => (
-          <StatCard key={idx} {...stat} />
-        ))}
+        {loading
+          ? Array.from({ length: 4 }).map((_, i) => (
+              <div key={i} className="card p-5">
+                <div className="flex items-start justify-between">
+                  <div className="space-y-2 flex-1">
+                    <div className="skeleton h-2.5 w-20" />
+                    <div className="skeleton h-7 w-16" />
+                    <div className="skeleton h-2.5 w-28" />
+                  </div>
+                  <div className="skeleton w-10 h-10 rounded-xl" />
+                </div>
+              </div>
+            ))
+          : stats.map((stat, idx) => (
+              <StatCard key={idx} {...stat} />
+            ))
+        }
       </div>
 
       {/* Quick Actions + System Dashboard */}

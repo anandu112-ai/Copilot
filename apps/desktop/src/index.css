@@ -349,3 +349,22 @@ td { @apply px-4 py-3 text-surface-200; }
 
 /* ── Light mode overrides ───────────────────────────────────────── */
 /* Handled by .light root variables */
+
+/* ── Float-up animation for login particles ──────────────────────────────── */
+@keyframes float-up {
+  0%   { transform: translateY(0) scale(1);   opacity: 0.6; }
+  50%  { transform: translateY(-45vh) scale(1.1); opacity: 0.4; }
+  100% { transform: translateY(-95vh) scale(0.8); opacity: 0; }
+}
+.animate-float-up {
+  animation: float-up linear infinite;
+}
+
+/* ── Fade-in ─────────────────────────────────────────────────────────────── */
+@keyframes fade-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in {
+  animation: fade-in 0.3s ease forwards;
+}

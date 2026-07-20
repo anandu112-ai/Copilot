@@ -1,6 +1,8 @@
 import { Routes, Route, Navigate } from 'react-router-dom'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
+import { Loader2, AlertTriangle } from 'lucide-react'
 import AppLayout from './components/layout/AppLayout'
+import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { useSettingsStore } from './stores/settingsStore'
 import { useAuthStore } from './stores/authStore'
 import { processorApi } from './services/processorApi'
@@ -38,6 +40,8 @@ export default function App() {
   const { loadSettings, theme } = useSettingsStore()
   const { isAuthenticated, token, setAuth, logout } = useAuthStore()
 
+  const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'failed'>('checking')
+
   useEffect(() => {
     loadSettings()
   }, [loadSettings])
@@ -62,13 +66,41 @@ export default function App() {
     }
   }, []) // runs once on mount
 
+  // Python service health-check with retry
+  useEffect(() => {
+    let cancelled = false
+    let attempts = 0
+    const maxAttempts = 20  // 20 × 1.5s = 30s max wait
+
+    async function poll() {
+      try {
+        const ok = await processorApi.checkHealth()
+        if (cancelled) return
+        if (ok) {
+          setServiceStatus('ready')
+          return
+        }
+      } catch {}
+      attempts++
+      if (attempts >= maxAttempts) {
+        if (!cancelled) setServiceStatus('failed')
+        return
+      }
+      setTimeout(poll, 1500)
+    }
+
+    poll()
+    return () => { cancelled = true }
+  }, [])
+
   // ── If not authenticated, show login screen ──────────────────────────────
   if (!isAuthenticated) {
     return <LoginPage />
   }
 
   return (
-    <Routes>
+    <ErrorBoundary context="the application">
+      <Routes>
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />
         <Route path="dashboard" element={<DashboardPage />} />
@@ -97,5 +129,6 @@ export default function App() {
         <Route path="help" element={<HelpPage />} />
       </Route>
     </Routes>
+    </ErrorBoundary>
   )
 }

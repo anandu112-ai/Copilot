@@ -34,14 +34,24 @@ export default function LoginPage() {
 
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!email.trim() || !password.trim()) {
+    const emailTrimmed = email.trim()
+    if (!emailTrimmed || !password.trim()) {
       setError('Please enter your email and password.')
+      return
+    }
+    // Basic email format check
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(emailTrimmed)) {
+      setError('Please enter a valid email address.')
+      return
+    }
+    if (password.length < 4) {
+      setError('Password is too short.')
       return
     }
     setError('')
     setLoading(true)
     try {
-      const res = await processorApi.login(email.trim(), password)
+      const res = await processorApi.login(emailTrimmed, password)
       setAuth(res.user, res.access_token)
       toast.success(`Welcome back, ${res.user.name}!`, { icon: '👋' })
     } catch (err: any) {
@@ -61,12 +71,12 @@ export default function LoginPage() {
         {particles.map(p => (
           <div
             key={p.id}
-            className="absolute rounded-full bg-brand-500/20 animate-pulse"
+            className="absolute rounded-full bg-brand-500/20 animate-float-up"
             style={{
               width: p.size,
               height: p.size,
               left: `${p.left}%`,
-              bottom: '-20px',
+              top: '100%',
               animationDelay: `${p.delay}s`,
               animationDuration: `${p.duration}s`,
             }}
@@ -170,6 +180,7 @@ export default function LoginPage() {
                     className="w-full bg-white/[0.04] border border-white/[0.10] rounded-xl pl-10 pr-4 py-3 text-sm text-white placeholder-surface-600 outline-none focus:border-brand-500/60 focus:ring-2 focus:ring-brand-500/20 transition-all"
                     placeholder="you@yourfirm.com"
                     autoComplete="email"
+                    maxLength={254}
                     disabled={loading}
                   />
                 </div>
@@ -188,6 +199,7 @@ export default function LoginPage() {
                     className="w-full bg-white/[0.04] border border-white/[0.10] rounded-xl pl-10 pr-11 py-3 text-sm text-white placeholder-surface-600 outline-none focus:border-brand-500/60 focus:ring-2 focus:ring-brand-500/20 transition-all"
                     placeholder="••••••••"
                     autoComplete="current-password"
+                    maxLength={128}
                     disabled={loading}
                   />
                   <button

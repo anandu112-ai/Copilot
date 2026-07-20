@@ -11,31 +11,36 @@ DB_PATH = Path(__file__).parent.parent / "reconciliation.db"
 
 def get_db_connection() -> sqlite3.Connection:
     """Get a connection to the SQLite database."""
-    conn = sqlite3.connect(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=30)
     conn.row_factory = sqlite3.Row
-    # Enable foreign keys
-    conn.execute("PRAGMA foreign_keys = ON;")
+    conn.execute('PRAGMA foreign_keys = ON;')
+    conn.execute('PRAGMA journal_mode = WAL;')
+    conn.execute('PRAGMA synchronous = NORMAL;')
+    conn.execute('PRAGMA cache_size = -32000;')  # 32MB cache
+    conn.execute('PRAGMA temp_store = MEMORY;')
     return conn
 
 def init_db():
     """Initialize the SQLite database and create all tables if they do not exist."""
     logger.info(f"Initializing database at: {DB_PATH}")
-    conn = get_db_connection()
-    cursor = conn.cursor()
+    conn = None
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
 
-    # 1. Clients Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS clients (
+        # 1. Clients Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS clients (
         id TEXT PRIMARY KEY,
         name TEXT UNIQUE NOT NULL,
         created_at TEXT DEFAULT (datetime('now'))
-    )
-    """)
+        )
+        """)
 
-    # 2. Bank Transactions Table
-    # Stores bank statement rows
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS bank_transactions (
+        # 2. Bank Transactions Table
+        # Stores bank statement rows
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS bank_transactions (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         bank_name TEXT,
@@ -59,13 +64,13 @@ def init_db():
         notes TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 3. Ledger Entries Table
-    # Stores cash book, sales register, purchase register, bank ledger, etc.
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS ledger_entries (
+        # 3. Ledger Entries Table
+        # Stores cash book, sales register, purchase register, bank ledger, etc.
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ledger_entries (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         ledger_type TEXT NOT NULL, -- purchase, sales, cash, bank, general
@@ -90,13 +95,13 @@ def init_db():
         notes TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 4. GST Invoices Table
-    # Stores GSTR-1, GSTR-2B, GSTR-3B records
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS gst_invoices (
+        # 4. GST Invoices Table
+        # Stores GSTR-1, GSTR-2B, GSTR-3B records
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS gst_invoices (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         source_type TEXT NOT NULL, -- gstr-1, gstr-2b, gstr-3b
@@ -118,13 +123,13 @@ def init_db():
         notes TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 5. Audit Trail Table
-    # Record manual actions (accept match, reject match, edit, notes)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS audit_trail (
+        # 5. Audit Trail Table
+        # Record manual actions (accept match, reject match, edit, notes)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_trail (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         client_id TEXT NOT NULL,
         action TEXT NOT NULL, -- accept_match, reject_match, merge_records, edit_data, add_notes
@@ -135,20 +140,20 @@ def init_db():
         user_decision TEXT,
         notes TEXT,
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 6. Metadata/Settings Table (For tracking processing times, configurations, etc.)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS system_metadata (
+        # 6. Metadata/Settings Table (For tracking processing times, configurations, etc.)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS system_metadata (
         key TEXT PRIMARY KEY,
         value TEXT
-    )
-    """)
+        )
+        """)
 
-    # 7. Audit Rules Table (Custom configurable audit rules)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS audit_rules (
+        # 7. Audit Rules Table (Custom configurable audit rules)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_rules (
         id TEXT PRIMARY KEY,
         name TEXT UNIQUE NOT NULL,
         description TEXT,
@@ -157,12 +162,12 @@ def init_db():
         condition_value TEXT,
         severity TEXT,
         is_enabled INTEGER DEFAULT 1
-    )
-    """)
+        )
+        """)
 
-    # 8. Audit Findings Table (AI Observations and Risks)
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS audit_findings (
+        # 8. Audit Findings Table (AI Observations and Risks)
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS audit_findings (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         title TEXT,
@@ -178,39 +183,39 @@ def init_db():
         notes TEXT,
         detected_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # Seed default audit rules if not already present
-    cursor.execute("SELECT count(*) FROM audit_rules")
-    if cursor.fetchone()[0] == 0:
-        default_rules = [
+        # Seed default audit rules if not already present
+        cursor.execute("SELECT count(*) FROM audit_rules")
+        if cursor.fetchone()[0] == 0:
+            default_rules = [
             ("rule-1", "High Value Payments", "Flag payments above ₹5,00,000", "debit", ">", "500000", "High", 1),
             ("rule-2", "Invalid GSTIN", "Warn if GSTIN format is invalid", "gstin", "is_invalid_format", "true", "High", 1),
             ("rule-3", "Invoices without PO", "Highlight invoices without purchase orders", "po", "is_empty", "true", "Medium", 1),
             ("rule-4", "Dormant Vendors", "Flag vendors inactive for more than one year", "vendor_status", "is_dormant", "1 year", "Medium", 1),
             ("rule-5", "Multiple Daily Vendor Payments", "Detect more than three payments to the same vendor on one day", "daily_payment_count", ">", "3", "High", 1),
             ("rule-6", "Section 40A(3) Cash Payment", "Flag cash payments exceeding ₹10,000 in a day", "cash_payment", ">", "10000", "Critical", 1)
-        ]
-        cursor.executemany("""
+            ]
+            cursor.executemany("""
             INSERT INTO audit_rules (id, name, description, target_field, condition_operator, condition_value, severity, is_enabled)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, default_rules)
+            """, default_rules)
 
-    # 9. AI Model Routing Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS ai_model_routing (
+        # 9. AI Model Routing Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS ai_model_routing (
         task_type TEXT PRIMARY KEY,
         provider TEXT NOT NULL,
         model_name TEXT NOT NULL,
         confidence_threshold REAL DEFAULT 0.80,
         requires_approval INTEGER DEFAULT 1
-    )
-    """)
+        )
+        """)
 
-    # 10. Document Relations Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS document_relations (
+        # 10. Document Relations Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_relations (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         source_doc_type TEXT NOT NULL,
@@ -221,35 +226,35 @@ def init_db():
         confidence_score REAL DEFAULT 1.0,
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 11. Client Groups Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS client_groups (
+        # 11. Client Groups Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS client_groups (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         group_name TEXT NOT NULL,
         parent_group TEXT,
         nature TEXT,
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 12. Client Cost Centres Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS client_cost_centres (
+        # 12. Client Cost Centres Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS client_cost_centres (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         name TEXT NOT NULL,
         category TEXT,
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 13. Inventory Items Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS inventory_items (
+        # 13. Inventory Items Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS inventory_items (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         sku TEXT,
@@ -261,12 +266,12 @@ def init_db():
         current_qty REAL DEFAULT 0.0,
         valuation_method TEXT DEFAULT 'FIFO',
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 14. Vouchers Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS vouchers (
+        # 14. Vouchers Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS vouchers (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         voucher_number TEXT,
@@ -282,12 +287,12 @@ def init_db():
         approval_status TEXT DEFAULT 'pending_junior',
         created_at TEXT DEFAULT (datetime('now')),
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 15. Voucher Approval Logs Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS voucher_approval_logs (
+        # 15. Voucher Approval Logs Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS voucher_approval_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         voucher_id TEXT NOT NULL,
         stage_from TEXT,
@@ -296,12 +301,12 @@ def init_db():
         action_at TEXT DEFAULT (datetime('now')),
         comments TEXT,
         FOREIGN KEY (voucher_id) REFERENCES vouchers(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # 16. Client Compliance Deadlines Table
-    cursor.execute("""
-    CREATE TABLE IF NOT EXISTS client_compliance_deadlines (
+        # 16. Client Compliance Deadlines Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS client_compliance_deadlines (
         id TEXT PRIMARY KEY,
         client_id TEXT NOT NULL,
         compliance_type TEXT NOT NULL,
@@ -311,27 +316,37 @@ def init_db():
         last_checked TEXT,
         reference_law TEXT,
         FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE CASCADE
-    )
-    """)
+        )
+        """)
 
-    # Seed default model routing if not present
-    cursor.execute("SELECT count(*) FROM ai_model_routing")
-    if cursor.fetchone()[0] == 0:
-        default_routings = [
+        # Seed default model routing if not present
+        cursor.execute("SELECT count(*) FROM ai_model_routing")
+        if cursor.fetchone()[0] == 0:
+            default_routings = [
             ("ocr", "tesseract", "Tesseract-OCR", 0.70, 0),
             ("invoice_extraction", "local_llama", "Llama-3-8B-Local", 0.85, 1),
             ("gst_analysis", "gemini_cloud", "Gemini-1.5-Pro", 0.90, 1),
             ("audit_reasoning", "gemini_cloud", "Gemini-1.5-Pro", 0.90, 1),
             ("chat", "local_llama", "Llama-3-8B-Local", 0.50, 0)
-        ]
-        cursor.executemany("""
+            ]
+            cursor.executemany("""
             INSERT INTO ai_model_routing (task_type, provider, model_name, confidence_threshold, requires_approval)
             VALUES (?, ?, ?, ?, ?)
-        """, default_routings)
+            """, default_routings)
 
-    conn.commit()
-    conn.close()
-    logger.info("Database schema initialized successfully.")
+        conn.commit()
+        logger.info("Database schema initialized successfully.")
+    except Exception:
+        if conn:
+            conn.rollback()
+        raise
+    finally:
+        if conn:
+            conn.close()
 
 # Run database initialization
-init_db()
+try:
+    init_db()
+except Exception as e:
+    logger.error(f'Database initialization failed: {e}')
+    raise RuntimeError(f'Cannot start CA Copilot: database init failed — {e}') from e

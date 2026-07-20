@@ -1,4 +1,5 @@
 import axios, { AxiosInstance } from 'axios'
+import axios, { AxiosInstance } from 'axios'
 import type { DocumentType, ExtractionResult } from '../types'
 
 let _port: number | null = null
@@ -10,30 +11,72 @@ async function getInstance(): Promise<AxiosInstance> {
   if (window.electronAPI) {
     _port = await window.electronAPI.getPythonPort()
   } else {
-    _port = 8765 // Default for browser testing
+    _port = 8765
   }
 
   _instance = axios.create({
     baseURL: `http://127.0.0.1:${_port}`,
-    timeout: 120000,
+    timeout: 30000,  // default — overridden per-call where needed
     headers: { 'Content-Type': 'application/json' },
   })
 
-  // Attach JWT token to every request automatically
+  // ── Attach JWT from sessionStorage (never localStorage) ─────────────────
   _instance.interceptors.request.use((config) => {
     try {
-      const stored = localStorage.getItem('ca-copilot-auth')
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        const token = parsed?.state?.token
+      const raw = sessionStorage.getItem('ca-copilot-session')
+      if (raw) {
+        const parsed = JSON.parse(raw)
+        const token = parsed?.token
         if (token) {
-          config.headers = config.headers || {}
+          config.headers = config.headers ?? {}
           config.headers['Authorization'] = `Bearer ${token}`
         }
       }
     } catch {}
     return config
   })
+
+  // ── Global response error interceptor ───────────────────────────────────
+  _instance.interceptors.response.use(
+    (res) => res,
+    async (error: import('axios').AxiosError) => {
+      const status = error.response?.status
+      const detail =
+        (error.response?.data as any)?.detail ??
+        (error.response?.data as any)?.message ??
+        error.message ??
+        'An unexpected error occurred'
+
+      if (status === 401) {
+        // Dynamically import to avoid circular dependency
+        const { useAuthStore } = await import('../stores/authStore')
+        useAuthStore.getState().logout()
+        const { default: toast } = await import('react-hot-toast')
+        toast.error('Session expired. Please sign in again.')
+        return Promise.reject(error)
+      }
+
+      if (status === 403) {
+        const { default: toast } = await import('react-hot-toast')
+        toast.error('Access denied. You do not have permission for this action.')
+        return Promise.reject(error)
+      }
+
+      if (status && status >= 500) {
+        const { default: toast } = await import('react-hot-toast')
+        toast.error(`Server error: ${detail}`)
+        return Promise.reject(error)
+      }
+
+      if (!error.response && error.code === 'ECONNREFUSED') {
+        const { default: toast } = await import('react-hot-toast')
+        toast.error('Cannot connect to processing service. It may still be starting up.', { id: 'conn-refused' })
+        return Promise.reject(error)
+      }
+
+      return Promise.reject(error)
+    }
+  )
 
   return _instance
 }
@@ -81,13 +124,11 @@ export const processorApi = {
     onStageUpdate: (stage: string) => void
   ): Promise<ExtractionResult> {
     const api = await getInstance()
-
     const response = await api.post<any>('/extract', {
       file_path: filePath,
       document_type: documentType,
       ocr_enabled: ocrEnabled,
-    })
-
+    }, { timeout: 180000 })  // 3 min for large scanned PDFs
     return snakeToCamel(response.data) as ExtractionResult
   },
 
@@ -97,16 +138,15 @@ export const processorApi = {
     documentType: DocumentType
   ): Promise<{ success: boolean; path: string; error?: string }> {
     const api = await getInstance()
-
     const response = await api.post<{ success: boolean; path: string; error?: string }>(
       '/generate-excel',
       {
         result: camelToSnake(result),
         output_path: outputPath,
         document_type: documentType,
-      }
+      },
+      { timeout: 60000 }  // 1 min for large Excel generation
     )
-
     return response.data
   },
 
