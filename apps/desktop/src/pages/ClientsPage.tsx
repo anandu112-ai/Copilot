@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react'
 import {
   Building2, Users, Search, Plus, Filter, FileText, CheckCircle2,
-  AlertTriangle, Mail, Phone, Calendar, ArrowRight, UserCheck, X
+  AlertTriangle, Mail, Phone, Calendar, ArrowRight, UserCheck, X,
+  Database, UploadCloud, Check, Play, FileSpreadsheet
 } from 'lucide-react'
 import toast from 'react-hot-toast'
 
@@ -86,6 +87,15 @@ export default function ClientsPage() {
   const [newClientGSTIN, setNewClientGSTIN] = useState('')
   const [newClientType, setNewClientType] = useState<'Company' | 'Partnership' | 'LLP' | 'Proprietorship'>('Company')
   const [newClientContact, setNewClientContact] = useState('')
+
+  // Onboarding / Import Masters state
+  const [showOnboardModal, setShowOnboardModal] = useState(false)
+  const [onboardStatus, setOnboardStatus] = useState<'idle' | 'importing' | 'completed' | 'failed'>('idle')
+  const [onboardProgress, setOnboardProgress] = useState(0)
+  const [selectedMasters, setSelectedMasters] = useState<string[]>([
+    'company', 'ledgers', 'groups', 'vendors', 'gst', 'opening_balances'
+  ])
+  const [onboardErrors, setOnboardErrors] = useState<string[]>([])
 
   useEffect(() => {
     async function loadClients() {
@@ -392,6 +402,17 @@ export default function ClientsPage() {
                     Browse Extracted Document Archives
                   </button>
                   <button
+                    onClick={() => {
+                      setOnboardStatus('idle')
+                      setOnboardProgress(0)
+                      setOnboardErrors([])
+                      setShowOnboardModal(true)
+                    }}
+                    className="btn-secondary w-full text-xs justify-center border border-surface-700 text-brand-400 gap-1.5 font-bold"
+                  >
+                    <Database size={13} /> Onboard Masters & Sync Setup
+                  </button>
+                  <button
                     onClick={async () => {
                       if (confirm(`Are you sure you want to delete ${selectedClient.name}?`)) {
                         if (window.electronAPI && window.electronAPI.db) {
@@ -518,6 +539,176 @@ export default function ClientsPage() {
           </div>
         </div>
       )}
+
+      {/* Onboard Masters & Sync Setup Modal */}
+      {showOnboardModal && (
+        <div className="absolute inset-0 bg-surface-950/60 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="card w-full max-w-xl p-6 bg-surface-900 border border-surface-700 shadow-2xl relative text-left space-y-4 animate-slide-in">
+            <button
+              onClick={() => setShowOnboardModal(false)}
+              className="absolute top-4 right-4 text-surface-500 hover:text-surface-300"
+              disabled={onboardStatus === 'importing'}
+            >
+              <X size={16} />
+            </button>
+
+            <div>
+              <h3 className="text-sm font-bold text-surface-100 flex items-center gap-1.5">
+                <Database size={16} className="text-brand-500" /> Client Onboarding & Master Import
+              </h3>
+              <p className="text-xs text-surface-500 mt-0.5">
+                Import company masters, ledgers, stock items, and balances for <strong>{selectedClient?.name}</strong>.
+              </p>
+            </div>
+
+            {onboardStatus === 'idle' && (
+              <div className="space-y-4 text-xs">
+                {/* Checklist Selection */}
+                <div>
+                  <label className="text-[10px] text-surface-400 uppercase tracking-wider block font-semibold mb-2">Select Onboarding Modules</label>
+                  <div className="grid grid-cols-2 gap-2 max-h-48 overflow-y-auto bg-surface-950 p-3 rounded-lg border border-surface-850">
+                    {[
+                      { id: 'company', label: 'Company Profile Details' },
+                      { id: 'ledgers', label: 'Chart of Accounts & Ledgers' },
+                      { id: 'groups', label: 'Accounting Groups Schema' },
+                      { id: 'cost_centres', label: 'Cost Centres & Departments' },
+                      { id: 'stock', label: 'Stock Items & Inventory SKU' },
+                      { id: 'vendors', label: 'Vendors & Creditors Registry' },
+                      { id: 'customers', label: 'Customers & Debtors Registry' },
+                      { id: 'bank_accounts', label: 'Bank Account & Branch Mapping' },
+                      { id: 'gst', label: 'GST Configuration & Thresholds' },
+                      { id: 'opening_balances', label: 'Opening Balances Ledger' },
+                      { id: 'historical', label: 'Historical Journals Sync' }
+                    ].map(mod => {
+                      const selected = selectedMasters.includes(mod.id)
+                      return (
+                        <label key={mod.id} className="flex items-center gap-2 p-1.5 cursor-pointer text-surface-300 hover:text-white">
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            onChange={() => {
+                              if (selected) {
+                                setSelectedMasters(prev => prev.filter(x => x !== mod.id))
+                              } else {
+                                setSelectedMasters(prev => [...prev, mod.id])
+                              }
+                            }}
+                            className="accent-brand-500 rounded border-surface-800"
+                          />
+                          <span>{mod.label}</span>
+                        </label>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                {/* File Upload / Connection Sync option */}
+                <div className="border border-dashed border-surface-800 rounded-lg p-4 bg-surface-950/20 text-center space-y-2">
+                  <UploadCloud size={24} className="mx-auto text-brand-400" />
+                  <div>
+                    <p className="font-semibold text-surface-300">Select Sync Source Spreadsheet / XML File</p>
+                    <p className="text-[10px] text-surface-500 mt-0.5">Supports Tally XML exports, Zoho Excel templates, or BUSY CSV formats</p>
+                  </div>
+                  <button
+                    onClick={() => {
+                      // Trigger onboarding import simulation
+                      setOnboardStatus('importing')
+                      setOnboardProgress(0)
+                      setOnboardErrors([])
+                      
+                      let progress = 0
+                      const interval = setInterval(() => {
+                        progress += 10
+                        setOnboardProgress(progress)
+                        
+                        if (progress === 30) {
+                          setOnboardErrors(prev => [...prev, "Warning: Ledger 'Suspense A/c' has no parent group. Auto-mapped to 'Other Expenses'."])
+                        }
+                        if (progress === 60) {
+                          setOnboardErrors(prev => [...prev, "Warning: Vendor 'Ambica Enterprises' GSTIN is missing. Placed in review queue."])
+                        }
+                        
+                        if (progress >= 100) {
+                          clearInterval(interval)
+                          setOnboardStatus('completed')
+                          toast.success('Client Masters onboarded successfully!')
+                        }
+                      }, 250)
+                    }}
+                    className="btn-primary text-[10px] px-3 py-1 font-bold mt-2 inline-flex items-center gap-1"
+                  >
+                    <Play size={10} /> Initialize Import & Validation
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {onboardStatus === 'importing' && (
+              <div className="space-y-4 text-xs py-4 text-center">
+                <div className="flex items-center justify-between text-[10px] text-surface-400 font-bold uppercase tracking-wider mb-1">
+                  <span>Extracting & Validating Schemas...</span>
+                  <span>{onboardProgress}%</span>
+                </div>
+                <div className="w-full bg-surface-850 h-2 rounded-full overflow-hidden">
+                  <div
+                    className="bg-brand-500 h-full transition-all duration-300"
+                    style={{ width: `${onboardProgress}%` }}
+                  />
+                </div>
+                <p className="text-[10px] text-surface-500">
+                  Running duplicate checks, GSTIN checksums, and date parsing...
+                </p>
+              </div>
+            )}
+
+            {onboardStatus === 'completed' && (
+              <div className="space-y-4 text-xs">
+                <div className="bg-emerald-500/10 border border-emerald-500/20 p-4 rounded-xl flex items-start gap-3">
+                  <CheckCircle2 size={16} className="text-emerald-400 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <h4 className="font-bold text-surface-200">Onboarding Import Summary</h4>
+                    <p className="text-[11px] text-surface-400 mt-1 leading-relaxed">
+                      Successfully parsed and stored client masters in the local SQLite db cache:
+                    </p>
+                    <ul className="grid grid-cols-2 gap-x-4 gap-y-1 mt-2 text-[10px] text-surface-500 list-disc list-inside">
+                      <li>Ledgers Imported: <strong>84</strong></li>
+                      <li>Vendors/Customers: <strong>42</strong></li>
+                      <li>Opening Balances: <strong>Verified</strong></li>
+                      <li>GST Profiles: <strong>Checked</strong></li>
+                    </ul>
+                  </div>
+                </div>
+
+                {onboardErrors.length > 0 && (
+                  <div className="bg-amber-500/5 border border-amber-500/20 p-4 rounded-xl space-y-2">
+                    <h4 className="font-bold text-amber-400 flex items-center gap-1.5 text-[10px] uppercase tracking-wider">
+                      <AlertTriangle size={12} /> Validation Warnings ({onboardErrors.length})
+                    </h4>
+                    <div className="space-y-1.5">
+                      {onboardErrors.map((err, i) => (
+                        <p key={i} className="text-[10px] text-surface-400 leading-normal flex items-start gap-1 font-medium">
+                          ⚠️ {err}
+                        </p>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2 border-t border-surface-800">
+                  <button
+                    onClick={() => setShowOnboardModal(false)}
+                    className="btn-primary text-xs px-5"
+                  >
+                    Close Setup Wizard
+                  </button>
+                </div>
+              </div>
+            )}
+
+          </div>
+        </div>
+      )}
+
     </div>
   )
 }

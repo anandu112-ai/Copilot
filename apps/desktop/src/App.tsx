@@ -19,6 +19,8 @@ import AiCopilotPage from './pages/AiCopilotPage'
 import FirmManagementPage from './pages/FirmManagementPage'
 import AiAutomationPage from './pages/AiAutomationPage'
 import EnterprisePage from './pages/EnterprisePage'
+import IntegrationsPage from './pages/IntegrationsPage'
+import CompliancePage from './pages/CompliancePage'
 
 // Legacy / Support Pages
 import PdfToExcelPage from './pages/PdfToExcelPage'
@@ -61,6 +63,8 @@ export default function App() {
         <Route path="ai-copilot" element={<AiCopilotPage />} />
         <Route path="ai-automation" element={<AiAutomationPage />} />
         <Route path="enterprise" element={<EnterprisePage />} />
+        <Route path="integrations" element={<IntegrationsPage />} />
+        <Route path="compliance" element={<CompliancePage />} />
         <Route path="firm" element={<FirmManagementPage />} />
         
         {/* Support paths */}

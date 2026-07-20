@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 # CA Copilot — AI-powered Accounting & Automation Platform
 
 CA Copilot is a local-first, highly secure desktop application designed specifically for Chartered Accountants, audit firms, tax professionals, and corporate finance teams. It simplifies and automates repetitive tasks like data extraction, vouching assistance, tax audits, and compliance checks, with a strong focus on absolute document privacy.
@@ -106,6 +105,3 @@ npm run build:win
 This script compiles the React code via Vite, compiles the Electron main files, packages all assets and the SQLite DB initialization script, and builds the installer in the `apps/desktop/release` directory using `electron-builder`.
 
 *Note: For production distribution, the Python environment can be bundled using PyInstaller or embedded as a virtual environment inside the extraResources build step as defined in `apps/desktop/package.json`.*
-=======
-# Copilot
->>>>>>> f12992c551c9d2ff7d305fbb8b167d59f362ca62

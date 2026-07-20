@@ -25,42 +25,21 @@ interface NavGroup {
 
 const navGroups: NavGroup[] = [
   {
-    id: 'core',
-    label: 'Workspace',
+    id: 'core-dashboard',
+    label: 'Dashboard',
     items: [
       {
         id: 'dashboard',
-        label: 'Dashboard',
+        label: 'System Dashboard',
         path: '/dashboard',
         icon: <LayoutDashboard size={16} />,
         isAvailable: true,
-      },
-      {
-        id: 'ai-copilot',
-        label: 'AI Copilot',
-        path: '/ai-copilot',
-        icon: <Bot size={16} />,
-        isAvailable: true,
-      },
-      {
-        id: 'clients',
-        label: 'Client Management',
-        path: '/clients',
-        icon: <Building2 size={16} />,
-        isAvailable: true,
-      },
-      {
-        id: 'firm-management',
-        label: 'Firm Management',
-        path: '/firm',
-        icon: <Users size={16} />,
-        isAvailable: true,
-      },
-    ],
+      }
+    ]
   },
   {
-    id: 'automation',
-    label: 'AI Services',
+    id: 'document-intelligence',
+    label: '📄 Document Intelligence',
     items: [
       {
         id: 'document-ai',
@@ -76,19 +55,44 @@ const navGroups: NavGroup[] = [
         icon: <Receipt size={16} />,
         isAvailable: true,
       },
+    ],
+  },
+  {
+    id: 'accounting-workspace',
+    label: '🧾 Accounting Workspace',
+    items: [
       {
-        id: 'ai-automation',
-        label: 'AI Automation Hub',
-        path: '/ai-automation',
-        icon: <BrainCircuit size={16} />,
+        id: 'ledger-reconciliation',
+        label: 'Ledger Reconciliation',
+        path: '/ledger-reconciliation',
+        icon: <BookCheck size={16} />,
+        isAvailable: true,
+      },
+      {
+        id: 'clients',
+        label: 'Client Management',
+        path: '/clients',
+        icon: <Building2 size={16} />,
         isAvailable: true,
       },
     ],
   },
-
   {
-    id: 'compliance',
-    label: 'Compliance',
+    id: 'banking-workspace',
+    label: '🏦 Banking Workspace',
+    items: [
+      {
+        id: 'bank-reconciliation',
+        label: 'Bank Reconciliation',
+        path: '/bank-reconciliation',
+        icon: <GitCompare size={16} />,
+        isAvailable: true,
+      },
+    ],
+  },
+  {
+    id: 'gst-workspace',
+    label: '📊 GST Workspace',
     items: [
       {
         id: 'gst-reconciliation',
@@ -97,20 +101,12 @@ const navGroups: NavGroup[] = [
         icon: <Calculator size={16} />,
         isAvailable: true,
       },
-      {
-        id: 'bank-reconciliation',
-        label: 'Bank Reconciliation',
-        path: '/bank-reconciliation',
-        icon: <GitCompare size={16} />,
-        isAvailable: true,
-      },
-      {
-        id: 'ledger-reconciliation',
-        label: 'Ledger Reconciliation',
-        path: '/ledger-reconciliation',
-        icon: <BookCheck size={16} />,
-        isAvailable: true,
-      },
+    ],
+  },
+  {
+    id: 'audit-workspace',
+    label: '🔍 Audit Workspace',
+    items: [
       {
         id: 'audit',
         label: 'Audit Assistant',
@@ -128,14 +124,60 @@ const navGroups: NavGroup[] = [
     ],
   },
   {
-    id: 'system',
-    label: 'System',
+    id: 'ai-copilot',
+    label: '🤖 AI Copilot',
+    items: [
+      {
+        id: 'ai-copilot',
+        label: 'AI Chat',
+        path: '/ai-copilot',
+        icon: <Bot size={16} />,
+        isAvailable: true,
+      },
+      {
+        id: 'ai-automation',
+        label: 'AI Automation Hub',
+        path: '/ai-automation',
+        icon: <BrainCircuit size={16} />,
+        isAvailable: true,
+      },
+    ],
+  },
+  {
+    id: 'reports',
+    label: '📈 Reports & Analytics',
     items: [
       {
         id: 'reports',
-        label: 'Reports',
+        label: 'Financial Reports',
         path: '/reports',
         icon: <BarChart3 size={16} />,
+        isAvailable: true,
+      },
+    ],
+  },
+  {
+    id: 'firm-management',
+    label: '👥 Firm Management',
+    items: [
+      {
+        id: 'firm-management',
+        label: 'Firm Control Panel',
+        path: '/firm',
+        icon: <Users size={16} />,
+        isAvailable: true,
+      },
+    ],
+  },
+  {
+    id: 'integrations',
+    label: '⚙️ Integrations & APIs',
+    items: [
+      {
+        id: 'integrations',
+        label: 'Integration Hub',
+        path: '/integrations',
+        icon: <Plug size={16} />,
         isAvailable: true,
       },
       {
@@ -143,6 +185,19 @@ const navGroups: NavGroup[] = [
         label: 'Enterprise Platform',
         path: '/enterprise',
         icon: <Rocket size={16} />,
+        isAvailable: true,
+      },
+    ],
+  },
+  {
+    id: 'knowledge-compliance',
+    label: '📚 Knowledge & Compliance',
+    items: [
+      {
+        id: 'compliance',
+        label: 'Tax & Compliance',
+        path: '/compliance',
+        icon: <History size={16} />,
         isAvailable: true,
       },
       {
