@@ -16,6 +16,7 @@ import AuditIntelligencePage from './pages/AuditIntelligencePage'
 import ReportsPage from './pages/ReportsPage'
 import SettingsPage from './pages/SettingsPage'
 import AiCopilotPage from './pages/AiCopilotPage'
+import FirmManagementPage from './pages/FirmManagementPage'
 
 // Legacy / Support Pages
 import PdfToExcelPage from './pages/PdfToExcelPage'
@@ -56,6 +57,7 @@ export default function App() {
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="ai-copilot" element={<AiCopilotPage />} />
+        <Route path="firm" element={<FirmManagementPage />} />
         
         {/* Support paths */}
         <Route path="pdf-to-excel" element={<PdfToExcelPage />} />

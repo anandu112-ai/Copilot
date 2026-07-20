@@ -49,6 +49,13 @@ const navGroups: NavGroup[] = [
         icon: <Building2 size={16} />,
         isAvailable: true,
       },
+      {
+        id: 'firm-management',
+        label: 'Firm Management',
+        path: '/firm',
+        icon: <Users size={16} />,
+        isAvailable: true,
+      },
     ],
   },
   {

@@ -45,21 +45,19 @@ export class PythonProcessManager {
 
   private getPythonPath(): string {
     if (isDev) {
-      // In development, use system Python or venv
-      const venvPython = path.join(
-        __dirname,
-        '../../../apps/processor/.venv/Scripts/python.exe'
-      )
-      if (fs.existsSync(venvPython)) return venvPython
-      return 'python'
+      // Check both Unix (.venv/bin/python) and Windows (.venv/Scripts/python.exe) virtual environments
+      const unixVenv = path.join(__dirname, '../../../apps/processor/.venv/bin/python')
+      const winVenv = path.join(__dirname, '../../../apps/processor/.venv/Scripts/python.exe')
+      if (fs.existsSync(unixVenv)) return unixVenv
+      if (fs.existsSync(winVenv)) return winVenv
+      return 'python3' // fallback to python3 in Unix development environments
     }
-    // In production, use bundled Python
-    const bundledPython = path.join(
-      process.resourcesPath,
-      'processor/.venv/Scripts/python.exe'
-    )
-    if (fs.existsSync(bundledPython)) return bundledPython
-    return path.join(process.resourcesPath, 'processor/python/python.exe')
+    // In production
+    const unixBundled = path.join(process.resourcesPath, 'processor/.venv/bin/python')
+    const winBundled = path.join(process.resourcesPath, 'processor/.venv/Scripts/python.exe')
+    if (fs.existsSync(unixBundled)) return unixBundled
+    if (fs.existsSync(winBundled)) return winBundled
+    return path.join(process.resourcesPath, 'processor/python/python')
   }
 
   private getProcessorPath(): string {
