@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileSpreadsheet, Brain, MessageSquare, FolderOpen,
   Users, Shield, BookCheck, GitCompare, Receipt, Calculator,
   Bot, BarChart3, Plug, History, Bell, Settings, HelpCircle,
-  ChevronLeft, ChevronRight, Zap, Building2, ShieldAlert
+  ChevronLeft, ChevronRight, Zap, Building2, ShieldAlert, BrainCircuit, Rocket
 } from 'lucide-react'
 
 interface NavItem {
@@ -76,6 +76,13 @@ const navGroups: NavGroup[] = [
         icon: <Receipt size={16} />,
         isAvailable: true,
       },
+      {
+        id: 'ai-automation',
+        label: 'AI Automation Hub',
+        path: '/ai-automation',
+        icon: <BrainCircuit size={16} />,
+        isAvailable: true,
+      },
     ],
   },
 
@@ -129,6 +136,13 @@ const navGroups: NavGroup[] = [
         label: 'Reports',
         path: '/reports',
         icon: <BarChart3 size={16} />,
+        isAvailable: true,
+      },
+      {
+        id: 'enterprise',
+        label: 'Enterprise Platform',
+        path: '/enterprise',
+        icon: <Rocket size={16} />,
         isAvailable: true,
       },
       {

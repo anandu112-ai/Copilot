@@ -23,6 +23,75 @@ export interface ElectronAPI {
     getClients: () => Promise<ClientRecord[]>
     insertClient: (client: Omit<ClientRecord, 'created_at' | 'updated_at'>) => Promise<{ success: boolean }>
     deleteClient: (id: string) => Promise<{ success: boolean }>
+
+    getFirmDetails: () => Promise<any>
+    saveFirmDetails: (details: any) => Promise<{ success: boolean }>
+    getUsers: () => Promise<any[]>
+    insertUser: (user: any) => Promise<{ success: boolean }>
+    deleteUser: (id: string) => Promise<{ success: boolean }>
+    getRolePermissions: () => Promise<any[]>
+    insertRolePermission: (role: string, permission: string, enabled: number) => Promise<{ success: boolean }>
+    clearRolePermissions: (role: string) => Promise<{ success: boolean }>
+    getTasks: () => Promise<any[]>
+    insertTask: (task: any) => Promise<{ success: boolean }>
+    updateTaskStatus: (id: string, status: string) => Promise<{ success: boolean }>
+    deleteTask: (id: string) => Promise<{ success: boolean }>
+    getTaskComments: (taskId: string) => Promise<any[]>
+    insertTaskComment: (comment: any) => Promise<{ success: boolean }>
+    getDocumentApprovals: (documentId: string) => Promise<any[]>
+    insertDocumentApproval: (approval: any) => Promise<{ success: boolean }>
+    getComplianceDeadlines: () => Promise<any[]>
+    insertComplianceDeadline: (deadline: any) => Promise<{ success: boolean }>
+    updateComplianceDeadline: (id: string, status: string) => Promise<{ success: boolean }>
+    deleteComplianceDeadline: (id: string) => Promise<{ success: boolean }>
+    getKnowledgeItems: (searchQuery?: string) => Promise<any[]>
+    insertKnowledgeItem: (item: any) => Promise<{ success: boolean }>
+    deleteKnowledgeItem: (id: string) => Promise<{ success: boolean }>
+    getAuditTrail: (limit?: number) => Promise<any[]>
+    insertAuditTrail: (log: any) => Promise<{ success: boolean }>
+    getSyncLogs: (limit?: number) => Promise<any[]>
+    insertSyncLog: (log: any) => Promise<{ success: boolean }>
+
+    getAiAutomationRules: () => Promise<any[]>
+    insertAiAutomationRule: (rule: any) => Promise<{ success: boolean }>
+    deleteAiAutomationRule: (id: string) => Promise<{ success: boolean }>
+    getAiSuggestions: () => Promise<any[]>
+    insertAiSuggestion: (sug: any) => Promise<{ success: boolean }>
+    updateAiSuggestionStatus: (id: string, status: string) => Promise<{ success: boolean }>
+    getAiWorkingPapers: (clientId?: string) => Promise<any[]>
+    insertAiWorkingPaper: (wp: any) => Promise<{ success: boolean }>
+    deleteAiWorkingPaper: (id: string) => Promise<{ success: boolean }>
+    getAiLearningRecords: () => Promise<any[]>
+    insertAiLearningRecord: (record: any) => Promise<{ success: boolean }>
+    getAiPipelineJobs: (limit?: number) => Promise<any[]>
+    insertAiPipelineJob: (job: any) => Promise<{ success: boolean }>
+    updateAiPipelineJob: (id: string, status: string, currentStep: number, progress: number, logs: string) => Promise<{ success: boolean }>
+    getAiQaFlags: () => Promise<any[]>
+    insertAiQaFlag: (flag: any) => Promise<{ success: boolean }>
+    updateAiQaFlagStatus: (id: string, status: string) => Promise<{ success: boolean }>
+
+    // Phase 8
+    getBackupRecords: () => Promise<any[]>
+    insertBackupRecord: (rec: any) => Promise<{ success: boolean }>
+    updateBackupRecord: (id: string, status: string, completedAt?: string) => Promise<{ success: boolean }>
+    deleteBackupRecord: (id: string) => Promise<{ success: boolean }>
+    getLicenseInfo: () => Promise<any>
+    upsertLicense: (lic: any) => Promise<{ success: boolean }>
+    getPlugins: () => Promise<any[]>
+    upsertPlugin: (plg: any) => Promise<{ success: boolean }>
+    updatePluginStatus: (id: string, status: string) => Promise<{ success: boolean }>
+    getErrorLogs: (limit?: number) => Promise<any[]>
+    insertErrorLog: (log: any) => Promise<{ success: boolean }>
+    resolveErrorLog: (id: string) => Promise<{ success: boolean }>
+    getPerfMetrics: () => Promise<any[]>
+    upsertPerfMetric: (m: any) => Promise<{ success: boolean }>
+    getDocumentFingerprints: () => Promise<any[]>
+    upsertDocumentFingerprint: (fp: any) => Promise<{ success: boolean }>
+    appendDocumentAccessHistory: (id: string, entry: object) => Promise<{ success: boolean }>
+    getUpdateHistory: () => Promise<any[]>
+    insertUpdateRecord: (upd: any) => Promise<{ success: boolean }>
+    getQaTestResults: () => Promise<any[]>
+    insertQaTestResult: (r: any) => Promise<{ success: boolean }>
   }
 
 
