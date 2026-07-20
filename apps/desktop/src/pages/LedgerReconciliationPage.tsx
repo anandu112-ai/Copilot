@@ -7,7 +7,7 @@ import {
 import toast from 'react-hot-toast'
 import { processorApi } from '../services/processorApi'
 
-export default function GstReconciliationPage() {
+export default function LedgerReconciliationPage() {
   // Clients state
   const [clients, setClients] = useState<Array<{ id: string; name: string }>>([])
   const [selectedClientId, setSelectedClientId] = useState<string>('')
@@ -15,18 +15,18 @@ export default function GstReconciliationPage() {
   const [showClientModal, setShowClientModal] = useState(false)
 
   // Reconciliation parameters
-  const [amountTolerance, setAmountTolerance] = useState<number>(5.0)
+  const [amountTolerance, setAmountTolerance] = useState<number>(1.0)
 
   // Upload state
-  const [gstFile, setGstFile] = useState<File | null>(null)
-  const [ledgerFile, setLedgerFile] = useState<File | null>(null)
-  const [sourceType, setSourceType] = useState('gstr-2b')
+  const [subLedgerFile, setSubLedgerFile] = useState<File | null>(null)
+  const [genLedgerFile, setGenLedgerFile] = useState<File | null>(null)
+  const [subLedgerType, setSubLedgerType] = useState('purchase') // purchase, sales, cash
   const [isUploading, setIsUploading] = useState(false)
 
   // Data lists
-  const [gstInvoices, setGstInvoices] = useState<any[]>([])
-  const [ledgerEntries, setLedgerEntries] = useState<any[]>([])
-  const [selectedInvId, setSelectedInvId] = useState<string>('')
+  const [subLedgerEntries, setSubLedgerEntries] = useState<any[]>([])
+  const [genLedgerEntries, setGenLedgerEntries] = useState<any[]>([])
+  const [selectedEntryId, setSelectedEntryId] = useState<string>('')
   const [dashboardStats, setDashboardStats] = useState<any>(null)
   const [duplicates, setDuplicates] = useState<any[]>([])
   const [auditTrail, setAuditTrail] = useState<any[]>([])
@@ -37,7 +37,7 @@ export default function GstReconciliationPage() {
 
   // Edit / Notes modals
   const [noteText, setNoteText] = useState('')
-  const [editingInv, setEditingInv] = useState<any>(null)
+  const [editingEntry, setEditingEntry] = useState<any>(null)
 
   // Fetch clients
   const loadClients = async () => {
@@ -52,24 +52,24 @@ export default function GstReconciliationPage() {
     }
   }
 
-  // Fetch dashboard stats, GST invoices, ledger entries, duplicates, audit trail
+  // Fetch dashboard stats, entries, duplicates, audit trail
   const loadClientData = async (clientId: string) => {
     if (!clientId) return
     try {
       const stats = await processorApi.getReconciliationDashboard(clientId)
       setDashboardStats(stats)
 
-      const gData = await processorApi.getGstInvoices(clientId)
-      setGstInvoices(gData)
-      if (gData.length > 0) {
-        setSelectedInvId(gData[0].id)
+      const sData = await processorApi.getLedgerEntries(clientId, subLedgerType)
+      setSubLedgerEntries(sData)
+      if (sData.length > 0) {
+        setSelectedEntryId(sData[0].id)
       }
 
-      const lData = await processorApi.getLedgerEntries(clientId, 'purchase')
-      setLedgerEntries(lData)
+      const gData = await processorApi.getLedgerEntries(clientId, 'general')
+      setGenLedgerEntries(gData)
 
       const dupData = await processorApi.getReconciliationDuplicates(clientId)
-      setDuplicates(dupData.gst || [])
+      setDuplicates(dupData.ledger || [])
 
       const auditData = await processorApi.getReconciliationAuditTrail(clientId)
       setAuditTrail(auditData)
@@ -87,7 +87,7 @@ export default function GstReconciliationPage() {
     if (selectedClientId) {
       loadClientData(selectedClientId)
     }
-  }, [selectedClientId])
+  }, [selectedClientId, subLedgerType])
 
   const handleCreateClient = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -104,24 +104,24 @@ export default function GstReconciliationPage() {
     }
   }
 
-  const handleUploadGst = async () => {
+  const handleUploadSubLedger = async () => {
     if (!selectedClientId) {
       toast.error('Select a client first')
       return
     }
-    if (!gstFile) {
-      toast.error('Choose a GST return file')
+    if (!subLedgerFile) {
+      toast.error('Choose a sub-ledger file')
       return
     }
     setIsUploading(true)
     try {
-      const res = await processorApi.uploadGst(
+      const res = await processorApi.uploadLedger(
         selectedClientId,
-        sourceType,
-        gstFile
+        subLedgerType,
+        subLedgerFile
       )
-      toast.success(`Parsed GST return successfully: ${res.count} invoices saved`)
-      setGstFile(null)
+      toast.success(`Parsed sub-ledger successfully: ${res.count} entries saved`)
+      setSubLedgerFile(null)
       loadClientData(selectedClientId)
     } catch (err: any) {
       toast.error(err.response?.data?.detail || 'Upload failed')
@@ -130,23 +130,23 @@ export default function GstReconciliationPage() {
     }
   }
 
-  const handleUploadLedger = async () => {
+  const handleUploadGenLedger = async () => {
     if (!selectedClientId) {
       toast.error('Select a client first')
       return
     }
-    if (!ledgerFile) {
-      toast.error('Choose a register file')
+    if (!genLedgerFile) {
+      toast.error('Choose a general ledger file')
       return
     }
     setIsUploading(true)
     try {
-      const res = await processorApi.uploadLedger(selectedClientId, 'purchase', ledgerFile)
-      toast.success(`Parsed Purchase Register successfully: ${res.count} entries saved`)
-      setLedgerFile(null)
+      const res = await processorApi.uploadLedger(selectedClientId, 'general', genLedgerFile)
+      toast.success(`Parsed General Ledger successfully: ${res.count} entries saved`)
+      setGenLedgerFile(null)
       loadClientData(selectedClientId)
     } catch (err: any) {
-      toast.error(err.response?.data?.detail || 'Ledger upload failed')
+      toast.error(err.response?.data?.detail || 'General Ledger upload failed')
     } finally {
       setIsUploading(false)
     }
@@ -156,7 +156,7 @@ export default function GstReconciliationPage() {
     if (!selectedClientId) return
     const loadingToast = toast.loading('Running AI Matching Rules Engine...')
     try {
-      const res = await processorApi.runGstMatching(selectedClientId, amountTolerance)
+      const res = await processorApi.runLedgerMatching(selectedClientId, amountTolerance)
       toast.dismiss(loadingToast)
       toast.success(`Reconciliation Completed. Auto-matched: ${res.auto_matched} items`)
       loadClientData(selectedClientId)
@@ -166,15 +166,15 @@ export default function GstReconciliationPage() {
     }
   }
 
-  const handleMatchAction = async (action: 'accept_match' | 'reject_match', gInvId: string, lTxId?: string) => {
+  const handleMatchAction = async (action: 'accept_match' | 'reject_match', entryId1: string, entryId2?: string) => {
     if (!selectedClientId) return
     try {
       await processorApi.handleReconciliationAction(
         selectedClientId,
         action,
-        'gst',
-        gInvId,
-        lTxId
+        'ledger',
+        entryId1,
+        entryId2
       )
       toast.success(action === 'accept_match' ? 'Match accepted & linked' : 'Match rejected')
       loadClientData(selectedClientId)
@@ -183,14 +183,14 @@ export default function GstReconciliationPage() {
     }
   }
 
-  const handleAddNotes = async (gInvId: string) => {
+  const handleAddNotes = async (entryId: string) => {
     if (!selectedClientId || !noteText.trim()) return
     try {
       await processorApi.handleReconciliationAction(
         selectedClientId,
         'add_notes',
-        'gst',
-        gInvId,
+        'ledger',
+        entryId,
         undefined,
         noteText
       )
@@ -204,22 +204,22 @@ export default function GstReconciliationPage() {
 
   const handleEditSave = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!selectedClientId || !editingInv) return
+    if (!selectedClientId || !editingEntry) return
     try {
       await processorApi.handleReconciliationAction(
         selectedClientId,
         'edit_data',
-        'gst',
-        editingInv.id,
+        'ledger',
+        editingEntry.id,
         undefined,
         undefined,
-        editingInv
+        editingEntry
       )
-      toast.success('Invoice details updated')
-      setEditingInv(null)
+      toast.success('Ledger details updated')
+      setEditingEntry(null)
       loadClientData(selectedClientId)
     } catch (err) {
-      toast.error('Failed to edit invoice')
+      toast.error('Failed to edit ledger')
     }
   }
 
@@ -227,11 +227,11 @@ export default function GstReconciliationPage() {
     if (!selectedClientId) return
     const loadingToast = toast.loading(`Generating & exporting ${format.toUpperCase()} report...`)
     try {
-      const blob = await processorApi.downloadReconciliationReport(selectedClientId, 'gst', format)
+      const blob = await processorApi.downloadReconciliationReport(selectedClientId, 'ledger', format)
       const url = window.URL.createObjectURL(blob)
       const a = document.createElement('a')
       a.href = url
-      a.download = `gst_reconciliation_report.${format === 'excel' ? 'xlsx' : format}`
+      a.download = `ledger_reconciliation_report.${format === 'excel' ? 'xlsx' : format}`
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -243,18 +243,18 @@ export default function GstReconciliationPage() {
     }
   }
 
-  const selectedInv = gstInvoices.find(t => t.id === selectedInvId)
-  const associatedLedgerTx = selectedInv?.matched_ledger_id
-    ? ledgerEntries.find(t => t.id === selectedInv.matched_ledger_id)
+  const selectedEntry = subLedgerEntries.find(t => t.id === selectedEntryId)
+  const associatedGenTx = selectedEntry?.matched_txn_id
+    ? genLedgerEntries.find(t => t.id === selectedEntry.matched_txn_id)
     : null
 
-  // Filtered invoices
-  const filteredInvoices = gstInvoices.filter(t => {
+  // Filtered subledger entries
+  const filteredEntries = subLedgerEntries.filter(t => {
     const matchesStatus = statusFilter === 'all' || t.status === statusFilter
     const matchesSearch = searchQuery === '' || 
-      (t.vendor_name || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.invoice_number || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (t.gstin || '').toLowerCase().includes(searchQuery.toLowerCase())
+      (t.description || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.reference_number || '').toLowerCase().includes(searchQuery.toLowerCase()) ||
+      (t.invoice_number || '').toLowerCase().includes(searchQuery.toLowerCase())
     return matchesStatus && matchesSearch
   })
 
@@ -265,10 +265,10 @@ export default function GstReconciliationPage() {
       <div className="flex justify-between items-center pb-4 border-b border-surface-800">
         <div>
           <h2 className="text-xl font-bold text-surface-100 flex items-center gap-2">
-            <GitCompare size={22} className="text-emerald-400" />
-            GST Reconciliation Suite (GSTR-2B vs Books)
+            <GitCompare size={22} className="text-purple-400" />
+            General Ledger Reconciliation Suite
           </h2>
-          <p className="text-xs text-surface-400 mt-1">Audit input tax credit (ITC) records and detect ledger mismatches offline</p>
+          <p className="text-xs text-surface-400 mt-1">Cross-reconcile sub-ledgers (Sales, Purchase, Cash) against general ledgers offline</p>
         </div>
         <div className="flex items-center gap-3">
           {/* Client Selector */}
@@ -309,24 +309,24 @@ export default function GstReconciliationPage() {
       {dashboardStats && (
         <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
           <div className="card p-4 bg-gradient-to-br from-surface-900 to-surface-950 border border-surface-850">
-            <p className="text-[10px] text-surface-400 font-bold uppercase tracking-wider">Total GST Invoices</p>
-            <p className="text-2xl font-bold text-surface-100 mt-1">{dashboardStats.gst?.total}</p>
+            <p className="text-[10px] text-surface-400 font-bold uppercase tracking-wider font-semibold">Total Book entries</p>
+            <p className="text-2xl font-bold text-surface-100 mt-1">{dashboardStats.ledger?.total}</p>
           </div>
           <div className="card p-4 bg-gradient-to-br from-surface-900 to-surface-950 border border-surface-850">
-            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">ITC Matched</p>
-            <p className="text-2xl font-bold text-emerald-400 mt-1">{dashboardStats.gst?.matched}</p>
+            <p className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">Entries Balanced</p>
+            <p className="text-2xl font-bold text-emerald-400 mt-1">{dashboardStats.ledger?.matched}</p>
           </div>
           <div className="card p-4 bg-gradient-to-br from-surface-900 to-surface-950 border border-surface-850">
-            <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">ITC Pending review</p>
-            <p className="text-2xl font-bold text-amber-400 mt-1">{dashboardStats.gst?.pending}</p>
+            <p className="text-[10px] text-amber-400 font-bold uppercase tracking-wider">Pending Audit reviews</p>
+            <p className="text-2xl font-bold text-amber-400 mt-1">{dashboardStats.ledger?.pending}</p>
           </div>
           <div className="card p-4 bg-gradient-to-br from-surface-900 to-surface-950 border border-surface-850">
-            <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider">ITC Mismatched</p>
-            <p className="text-2xl font-bold text-red-400 mt-1">{dashboardStats.gst?.unmatched}</p>
+            <p className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Ledger Imbalance Exception</p>
+            <p className="text-2xl font-bold text-red-400 mt-1">{dashboardStats.ledger?.unmatched}</p>
           </div>
           <div className="card p-4 bg-gradient-to-br from-surface-900 to-surface-950 border border-surface-850">
-            <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Duplicates GSTIN/Inv</p>
-            <p className="text-2xl font-bold text-purple-400 mt-1">{dashboardStats.duplicates?.gst}</p>
+            <p className="text-[10px] text-purple-400 font-bold uppercase tracking-wider">Duplicate entries risk</p>
+            <p className="text-2xl font-bold text-purple-400 mt-1">{dashboardStats.duplicates?.ledger}</p>
           </div>
         </div>
       )}
@@ -336,50 +336,51 @@ export default function GstReconciliationPage() {
         
         {/* Left Upload Form */}
         <div className="xl:col-span-8 grid grid-cols-1 md:grid-cols-2 gap-6 bg-surface-900 border border-surface-850 rounded-xl p-5">
-          {/* GST Return Upload */}
+          {/* Sub-Ledger / Register Upload */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider flex items-center gap-1.5">
-              <Upload size={14} className="text-emerald-400" /> Upload GSTR returns sheet
+              <Upload size={14} className="text-purple-400" /> Upload Register / Sub-Ledger
             </h3>
             
             <div className="space-y-2">
               <select
-                value={sourceType}
-                onChange={(e) => setSourceType(e.target.value)}
+                value={subLedgerType}
+                onChange={(e) => setSubLedgerType(e.target.value)}
                 className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-xs text-surface-200"
               >
-                <option value="gstr-2b">GSTR-2B (Auto-drafted ITC)</option>
-                <option value="gstr-1">GSTR-1 (Outward Supplies)</option>
+                <option value="purchase">Purchase Register / Ledger</option>
+                <option value="sales">Sales Register / Ledger</option>
+                <option value="cash">Cash Book / Ledger</option>
               </select>
               
-              <div className="border border-dashed border-surface-800 rounded-lg p-3 flex flex-col items-center justify-center bg-surface-950 cursor-pointer relative hover:border-emerald-500/40 transition">
+              <div className="border border-dashed border-surface-800 rounded-lg p-3 flex flex-col items-center justify-center bg-surface-950 cursor-pointer relative hover:border-purple-500/40 transition">
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setGstFile(e.target.files?.[0] || null)}
+                  onChange={(e) => setSubLedgerFile(e.target.files?.[0] || null)}
                   className="absolute inset-0 opacity-0 cursor-pointer"
                 />
                 <FileSpreadsheet size={24} className="text-surface-500 mb-1" />
                 <span className="text-[11px] text-surface-300 font-medium">
-                  {gstFile ? gstFile.name : 'Select return sheet (Excel/CSV)'}
+                  {subLedgerFile ? subLedgerFile.name : 'Select sub-ledger file (Excel/CSV)'}
                 </span>
-                <span className="text-[9px] text-surface-500 mt-0.5 font-mono">Supports official GST portal downloads</span>
+                <span className="text-[9px] text-surface-500 mt-0.5 font-mono">Excel columns are auto-mapped via Pandas</span>
               </div>
               
               <button
-                onClick={handleUploadGst}
-                disabled={!gstFile || isUploading}
+                onClick={handleUploadSubLedger}
+                disabled={!subLedgerFile || isUploading}
                 className="btn-primary w-full text-xs justify-center py-1.5 gap-1.5"
               >
-                <Check size={13} /> Ingest GST Return
+                <Check size={13} /> Ingest Sub-Ledger
               </button>
             </div>
           </div>
 
-          {/* Purchase Register Upload */}
+          {/* General Ledger Upload */}
           <div className="space-y-3">
             <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider flex items-center gap-1.5">
-              <Upload size={14} className="text-teal-400" /> Upload Purchase / Sales Register
+              <Upload size={14} className="text-teal-400" /> Upload General Ledger Book
             </h3>
             
             <div className="space-y-2">
@@ -387,22 +388,22 @@ export default function GstReconciliationPage() {
                 <input
                   type="file"
                   accept=".xlsx,.xls,.csv"
-                  onChange={(e) => setLedgerFile(e.target.files?.[0] || null)}
+                  onChange={(e) => setGenLedgerFile(e.target.files?.[0] || null)}
                   className="absolute inset-0 opacity-0 cursor-pointer"
                 />
                 <FileText size={24} className="text-surface-500 mb-1" />
                 <span className="text-[11px] text-surface-300 font-medium">
-                  {ledgerFile ? ledgerFile.name : 'Select register workbook (Excel/CSV)'}
+                  {genLedgerFile ? genLedgerFile.name : 'Select general ledger sheet (Excel/CSV)'}
                 </span>
-                <span className="text-[9px] text-surface-500 mt-0.5">Pandas scans for GSTIN, invoice date, amounts</span>
+                <span className="text-[9px] text-surface-500 mt-0.5">Scanned for date matching and double-entries</span>
               </div>
               
               <button
-                onClick={handleUploadLedger}
-                disabled={!ledgerFile || isUploading}
+                onClick={handleUploadGenLedger}
+                disabled={!genLedgerFile || isUploading}
                 className="btn-secondary border border-surface-800 w-full text-xs justify-center py-1.5 gap-1.5"
               >
-                <Check size={13} /> Ingest Books Register
+                <Check size={13} /> Ingest General Ledger
               </button>
             </div>
           </div>
@@ -412,12 +413,12 @@ export default function GstReconciliationPage() {
         <div className="xl:col-span-4 bg-surface-900 border border-surface-850 rounded-xl p-5 flex flex-col justify-between">
           <div className="space-y-4">
             <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider flex items-center gap-1.5">
-              <Play size={13} className="text-emerald-400" /> Match Configuration Rules
+              <Play size={13} className="text-purple-400" /> Match Configuration Rules
             </h3>
 
             <div className="space-y-3 font-mono text-[11px] text-surface-300">
               <div className="flex justify-between items-center">
-                <span>GST Tax Rounding Tolerance (₹):</span>
+                <span>Value Tolerance Range (₹):</span>
                 <input
                   type="number"
                   step="0.5"
@@ -426,8 +427,8 @@ export default function GstReconciliationPage() {
                   className="w-16 bg-surface-950 border border-surface-850 rounded px-1.5 py-0.5 text-right text-surface-100"
                 />
               </div>
-              <p className="text-[9px] text-surface-500 leading-relaxed">
-                Rules: matches GSTIN, normalized invoice numbers, dates within 30 days, taxable values and GST breakdowns.
+              <p className="text-[9px] text-surface-500 leading-relaxed font-mono">
+                Matching rules cross-verify corresponding debit & credit voucher allocations, matching date structures, and description keywords.
               </p>
             </div>
           </div>
@@ -444,11 +445,11 @@ export default function GstReconciliationPage() {
       {/* Side-by-side comparative workspace review */}
       <div className="grid grid-cols-1 xl:grid-cols-12 gap-6 items-stretch">
         
-        {/* Left Panel: GST Invoices */}
+        {/* Left Panel: Register Entries */}
         <div className="xl:col-span-8 card p-4 flex flex-col h-full bg-surface-900 border border-surface-850">
           <div className="flex justify-between items-center mb-4 pb-2 border-b border-surface-800">
             <div className="flex items-center gap-3">
-              <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider">GST Portal Invoices</h3>
+              <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider">Sub-Ledger Transactions</h3>
               
               <div className="flex gap-1.5">
                 <button
@@ -482,7 +483,7 @@ export default function GstReconciliationPage() {
               <Search size={12} className="text-surface-400" />
               <input
                 type="text"
-                placeholder="Search vendor or invoice..."
+                placeholder="Search description or ref..."
                 value={searchQuery}
                 onChange={(e) => setSearchQuery(e.target.value)}
                 className="bg-surface-950 border border-surface-800 rounded px-2 py-1 text-[11px] text-surface-200 w-44"
@@ -494,44 +495,43 @@ export default function GstReconciliationPage() {
             <table className="w-full text-left">
               <thead>
                 <tr className="bg-surface-950 border-b border-surface-800 text-[10px] text-surface-400 uppercase font-mono">
-                  <th className="p-2.5">Vendor / GSTIN</th>
-                  <th className="p-2.5">Invoice Details</th>
-                  <th className="p-2.5 text-right">Taxable Val</th>
-                  <th className="p-2.5 text-right">Total Amount</th>
+                  <th className="p-2.5">Date / Ref</th>
+                  <th className="p-2.5">Particulars / Account</th>
+                  <th className="p-2.5 text-right">Debit</th>
+                  <th className="p-2.5 text-right">Credit</th>
                   <th className="p-2.5 text-center">Status</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-surface-850">
-                {filteredInvoices.length === 0 ? (
+                {filteredEntries.length === 0 ? (
                   <tr>
                     <td colSpan={5} className="p-8 text-center text-xs text-surface-500 font-mono">
-                      No GST portal records found.
+                      No sub-ledger book entries found.
                     </td>
                   </tr>
                 ) : (
-                  filteredInvoices.map((t) => {
-                    const isSelected = t.id === selectedInvId
+                  filteredEntries.map((t) => {
+                    const isSelected = t.id === selectedEntryId
                     return (
                       <tr
                         key={t.id}
-                        onClick={() => setSelectedInvId(t.id)}
+                        onClick={() => setSelectedEntryId(t.id)}
                         className={`cursor-pointer hover:bg-surface-800/60 text-xs transition duration-150 ${isSelected ? 'bg-teal-500/5' : ''}`}
                       >
                         <td className="p-2.5 font-mono">
-                          <p className="text-surface-200 font-semibold truncate max-w-[200px]" title={t.vendor_name}>{t.vendor_name}</p>
-                          <span className="text-[9px] text-surface-500">{t.gstin}</span>
+                          <p className="text-surface-200 font-semibold">{t.date}</p>
+                          <span className="text-[9px] text-surface-500 font-bold">{t.reference_number || t.invoice_number || 'N/A'}</span>
                         </td>
                         <td className="p-2.5 font-mono">
-                          <p className="text-surface-300 font-medium">{t.invoice_number}</p>
-                          <p className="text-[10px] text-surface-500">{t.invoice_date}</p>
+                          <p className="text-surface-300 font-medium truncate max-w-[280px]" title={t.description}>{t.description}</p>
                         </td>
-                        <td className="p-2.5 text-right font-mono text-surface-300">
-                          ₹{t.taxable_value.toLocaleString('en-IN')}
+                        <td className="p-2.5 text-right font-mono text-red-400">
+                          {t.debit > 0 ? `₹${t.debit.toLocaleString('en-IN')}` : '-'}
                         </td>
-                        <td className="p-2.5 text-right font-mono text-emerald-400 font-medium">
-                          ₹{t.total_amount.toLocaleString('en-IN')}
+                        <td className="p-2.5 text-right font-mono text-emerald-400">
+                          {t.credit > 0 ? `₹${t.credit.toLocaleString('en-IN')}` : '-'}
                         </td>
-                        <td className="p-2.5 text-center font-mono">
+                        <td className="p-2.5 text-center">
                           {t.status === 'matched' ? (
                             <span className="text-emerald-400 text-[10px] bg-emerald-500/10 px-1.5 py-0.5 rounded font-medium">Matched</span>
                           ) : t.status === 'pending_review' ? (
@@ -551,52 +551,53 @@ export default function GstReconciliationPage() {
 
         {/* Right Panel: match suggestions workspace */}
         <div className="xl:col-span-4 card p-5 bg-surface-900 border border-surface-850 flex flex-col justify-between h-full">
-          {selectedInv ? (
+          {selectedEntry ? (
             <div className="space-y-5 h-full flex flex-col justify-between">
               
               <div className="space-y-4">
                 <div className="border-b border-surface-800 pb-3">
-                  <span className="text-[9px] uppercase font-bold text-surface-400 font-mono">Selected GST invoice</span>
-                  <h4 className="text-sm font-bold text-surface-100 mt-1 truncate">{selectedInv.vendor_name}</h4>
+                  <span className="text-[9px] uppercase font-bold text-surface-400 font-mono">Selected sub-ledger entry</span>
+                  <h4 className="text-sm font-bold text-surface-100 mt-1 truncate">{selectedEntry.description}</h4>
                   <p className="text-xs text-surface-300 font-mono mt-1">
-                    Invoice: <span className="font-semibold text-teal-400">{selectedInv.invoice_number}</span> · Date: {selectedInv.invoice_date}
+                    Value: <span className="font-semibold text-teal-400">₹{(selectedEntry.debit || selectedEntry.credit).toLocaleString('en-IN')}</span> 
+                    {selectedEntry.debit > 0 ? ' (Dr/Debit)' : ' (Cr/Credit)'}
                   </p>
-                  <p className="text-[10px] text-surface-500 font-mono mt-0.5">
-                    GSTIN: {selectedInv.gstin} · Total: ₹{selectedInv.total_amount.toLocaleString('en-IN')}
-                  </p>
+                  <p className="text-[10px] text-surface-500 font-mono mt-0.5">Date: {selectedEntry.date} · Ref: {selectedEntry.reference_number || 'N/A'}</p>
                 </div>
 
                 {/* Match Suggestions */}
-                {selectedInv.status === 'matched' || selectedInv.status === 'pending_review' ? (
+                {selectedEntry.status === 'matched' || selectedEntry.status === 'pending_review' ? (
                   <div className="space-y-3">
                     <div className="bg-surface-950 p-3 rounded-lg border border-surface-800 space-y-2">
                       <div className="flex items-center justify-between">
                         <span className="text-[9px] text-teal-400 font-bold uppercase tracking-wider font-mono">
-                          {selectedInv.status === 'matched' ? 'Linked Books Match' : 'Suggested AI match'}
+                          {selectedEntry.status === 'matched' ? 'Linked General Book Match' : 'Suggested AI match'}
                         </span>
                         <span className="text-[10px] bg-teal-500/15 text-teal-400 font-mono px-1 rounded font-bold">
-                          {selectedInv.match_score || 95}% Match
+                          {selectedEntry.match_score || 95}% Match
                         </span>
                       </div>
                       
-                      {associatedLedgerTx ? (
+                      {associatedGenTx ? (
                         <div className="space-y-1 font-mono text-[11px]">
-                          <p className="text-surface-200 font-semibold truncate">{associatedLedgerTx.description}</p>
-                          <p className="flex justify-between"><span className="text-surface-500">Books Date:</span> <span className="text-surface-300">{associatedLedgerTx.date}</span></p>
-                          <p className="flex justify-between"><span className="text-surface-500">Invoice No:</span> <span className="text-surface-300">{associatedLedgerTx.invoice_number || 'N/A'}</span></p>
-                          <p className="flex justify-between"><span className="text-surface-500">Taxable Value:</span> <span className="text-surface-300">₹{associatedLedgerTx.amount_taxable.toLocaleString('en-IN')}</span></p>
-                          <p className="flex justify-between"><span className="text-surface-500">Total Value:</span> <span className="text-surface-300">₹{associatedLedgerTx.total_amount.toLocaleString('en-IN')}</span></p>
+                          <p className="text-surface-200 font-semibold truncate">{associatedGenTx.description}</p>
+                          <p className="flex justify-between"><span className="text-surface-500">GL Date:</span> <span className="text-surface-300">{associatedGenTx.date}</span></p>
+                          <p className="flex justify-between"><span className="text-surface-500">GL Ref:</span> <span className="text-surface-300">{associatedGenTx.reference_number || 'N/A'}</span></p>
+                          <p className="flex justify-between">
+                            <span className="text-surface-500">GL Value:</span> 
+                            <span className="text-surface-300">₹{(associatedGenTx.credit || associatedGenTx.debit).toLocaleString('en-IN')}</span>
+                          </p>
                         </div>
                       ) : (
-                        <p className="text-[11px] text-surface-400 italic">Associated ledger entry details missing in session memory</p>
+                        <p className="text-[11px] text-surface-400 italic">Associated general ledger details missing in session memory</p>
                       )}
                     </div>
 
-                    {selectedInv.match_reason && (
+                    {selectedEntry.match_reason && (
                       <div className="bg-surface-950/40 p-3 rounded-lg border border-surface-850 space-y-1">
                         <h4 className="text-[10px] font-bold text-surface-400 uppercase font-mono">Evidence Log</h4>
-                        <p className="text-[11px] text-surface-300 leading-relaxed font-mono">
-                          {selectedInv.match_reason.split(',').map((r: string, idx: number) => (
+                        <p className="text-[11px] text-surface-300 leading-relaxed font-mono font-semibold">
+                          {selectedEntry.match_reason.split(',').map((r: string, idx: number) => (
                             <span key={idx} className="block">• {r.trim()}</span>
                           ))}
                         </p>
@@ -609,17 +610,17 @@ export default function GstReconciliationPage() {
                     <div>
                       <p className="text-xs font-semibold">No direct match found</p>
                       <p className="text-[10px] text-surface-400 mt-1 leading-relaxed">
-                        No purchase register transaction matched this GST invoice. Flagged as mismatched ITC (Rule 36(4) warning).
+                        No general ledger double entry matched this sub-ledger entry. Suggest manually matching or creating correction voucher.
                       </p>
                     </div>
                   </div>
                 )}
 
-                {/* Audit notes */}
-                {selectedInv.notes && (
+                {/* Notes */}
+                {selectedEntry.notes && (
                   <div className="bg-surface-950 p-2.5 rounded-lg border border-surface-850 font-mono text-[10px]">
                     <span className="text-surface-400 uppercase font-bold">Accountant Notes:</span>
-                    <p className="text-surface-200 mt-1">{selectedInv.notes}</p>
+                    <p className="text-surface-200 mt-1">{selectedEntry.notes}</p>
                   </div>
                 )}
 
@@ -637,7 +638,7 @@ export default function GstReconciliationPage() {
                       className="bg-surface-950 border border-surface-800 rounded px-2 py-1 text-xs text-surface-200 flex-1"
                     />
                     <button
-                      onClick={() => handleAddNotes(selectedInv.id)}
+                      onClick={() => handleAddNotes(selectedEntry.id)}
                       className="btn-secondary px-2.5 py-1 text-xs border border-surface-800 text-teal-400"
                     >
                       Save
@@ -648,17 +649,17 @@ export default function GstReconciliationPage() {
 
               {/* Action commands */}
               <div className="space-y-2 mt-4 pt-3 border-t border-surface-800">
-                {selectedInv.status !== 'matched' && selectedInv.matched_ledger_id && (
+                {selectedEntry.status !== 'matched' && selectedEntry.matched_txn_id && (
                   <button
-                    onClick={() => handleMatchAction('accept_match', selectedInv.id, selectedInv.matched_ledger_id)}
+                    onClick={() => handleMatchAction('accept_match', selectedEntry.id, selectedEntry.matched_txn_id)}
                     className="btn-primary w-full text-xs justify-center gap-1.5 py-2 font-bold"
                   >
                     <Check size={14} /> Accept & Link match
                   </button>
                 )}
-                {selectedInv.status === 'matched' && (
+                {selectedEntry.status === 'matched' && (
                   <button
-                    onClick={() => handleMatchAction('reject_match', selectedInv.id, selectedInv.matched_ledger_id)}
+                    onClick={() => handleMatchAction('reject_match', selectedEntry.id, selectedEntry.matched_txn_id)}
                     className="btn-secondary w-full text-xs justify-center gap-1.5 py-2 text-red-400 border border-red-500/20 bg-red-500/5 font-bold"
                   >
                     Reject & Unlink match
@@ -667,10 +668,10 @@ export default function GstReconciliationPage() {
                 
                 <div className="grid grid-cols-2 gap-2">
                   <button
-                    onClick={() => setEditingInv(selectedInv)}
+                    onClick={() => setEditingEntry(selectedEntry)}
                     className="btn-secondary text-[11px] justify-center py-1.5 border border-surface-800 text-surface-300"
                   >
-                    <Edit3 size={11} className="mr-1" /> Edit Invoice
+                    <Edit3 size={11} className="mr-1" /> Edit entry
                   </button>
                   
                   <button
@@ -686,18 +687,18 @@ export default function GstReconciliationPage() {
           ) : (
             <div className="flex-1 flex flex-col items-center justify-center text-center py-24 text-surface-500">
               <GitCompare size={32} className="mb-2 text-surface-600" />
-              <p className="text-xs font-mono">Select invoice to activate workspace panel</p>
+              <p className="text-xs font-mono">Select entry to activate workspace panel</p>
             </div>
           )}
         </div>
       </div>
 
-      {/* Duplicate detection & manual review audit log */}
+      {/* Duplicate detections & manual review audit log */}
       <div className="grid grid-cols-1 xl:grid-cols-2 gap-6">
         {/* Duplicates */}
         <div className="card p-4 bg-surface-900 border border-surface-850">
           <h3 className="text-xs font-bold text-surface-200 uppercase tracking-wider pb-2 border-b border-surface-800 flex items-center gap-1.5">
-            <AlertCircle size={14} className="text-purple-400" /> Duplicate GST Invoices flag ({duplicates.length})
+            <AlertCircle size={14} className="text-purple-400" /> Duplicate Ledger Entries Detected ({duplicates.length})
           </h3>
           <div className="max-h-[220px] overflow-y-auto mt-3">
             {duplicates.length === 0 ? (
@@ -744,74 +745,64 @@ export default function GstReconciliationPage() {
         </div>
       </div>
 
-      {/* Edit invoice Modal */}
-      {editingInv && (
+      {/* Edit Entry Modal */}
+      {editingEntry && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-sm flex items-center justify-center p-4">
           <div className="bg-surface-900 border border-surface-800 rounded-xl p-5 w-full max-w-md space-y-4 text-left">
-            <h3 className="text-sm font-bold text-surface-100 pb-2 border-b border-surface-800">Edit GST Invoice Data</h3>
+            <h3 className="text-sm font-bold text-surface-100 pb-2 border-b border-surface-800">Edit Ledger Voucher Data</h3>
             
             <form onSubmit={handleEditSave} className="space-y-3 font-mono text-xs">
               <div className="space-y-1">
-                <label className="text-surface-400">Invoice Date:</label>
+                <label className="text-surface-400">Date:</label>
                 <input
                   type="text"
-                  value={editingInv.invoice_date}
-                  onChange={(e) => setEditingInv({ ...editingInv, invoice_date: e.target.value })}
+                  value={editingEntry.date}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, date: e.target.value })}
                   className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-surface-400">Vendor Name:</label>
+                <label className="text-surface-400">Particulars / Account:</label>
                 <input
                   type="text"
-                  value={editingInv.vendor_name}
-                  onChange={(e) => setEditingInv({ ...editingInv, vendor_name: e.target.value })}
+                  value={editingEntry.description}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, description: e.target.value })}
                   className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-surface-400">Invoice Number:</label>
+                <label className="text-surface-400">Ref / Invoice No:</label>
                 <input
                   type="text"
-                  value={editingInv.invoice_number}
-                  onChange={(e) => setEditingInv({ ...editingInv, invoice_number: e.target.value })}
+                  value={editingEntry.reference_number || editingEntry.invoice_number || ''}
+                  onChange={(e) => setEditingEntry({ ...editingEntry, reference_number: e.target.value, invoice_number: e.target.value })}
                   className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
                 />
               </div>
 
               <div className="grid grid-cols-2 gap-2">
                 <div className="space-y-1">
-                  <label className="text-surface-400">Taxable Value:</label>
+                  <label className="text-surface-400">Debit Amount:</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={editingInv.taxable_value}
-                    onChange={(e) => setEditingInv({ ...editingInv, taxable_value: parseFloat(e.target.value) || 0 })}
+                    value={editingEntry.debit}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, debit: parseFloat(e.target.value) || 0 })}
                     className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-surface-400">Total Amount:</label>
+                  <label className="text-surface-400">Credit Amount:</label>
                   <input
                     type="number"
                     step="0.01"
-                    value={editingInv.total_amount}
-                    onChange={(e) => setEditingInv({ ...editingInv, total_amount: parseFloat(e.target.value) || 0 })}
+                    value={editingEntry.credit}
+                    onChange={(e) => setEditingEntry({ ...editingEntry, credit: parseFloat(e.target.value) || 0 })}
                     className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
                   />
                 </div>
-              </div>
-
-              <div className="space-y-1">
-                <label className="text-surface-400">GSTIN:</label>
-                <input
-                  type="text"
-                  value={editingInv.gstin}
-                  onChange={(e) => setEditingInv({ ...editingInv, gstin: e.target.value })}
-                  className="bg-surface-950 border border-surface-800 rounded w-full px-2.5 py-1.5 text-surface-100"
-                />
               </div>
 
               <div className="flex gap-2 pt-3">
@@ -820,7 +811,7 @@ export default function GstReconciliationPage() {
                 </button>
                 <button
                   type="button"
-                  onClick={() => setEditingInv(null)}
+                  onClick={() => setEditingEntry(null)}
                   className="btn-secondary border border-surface-800 text-xs flex-1 justify-center py-1.5"
                 >
                   Cancel

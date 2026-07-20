@@ -10,7 +10,9 @@ import DocumentAiPage from './pages/DocumentAiPage'
 import InvoiceProcessingPage from './pages/InvoiceProcessingPage'
 import GstReconciliationPage from './pages/GstReconciliationPage'
 import BankReconciliationPage from './pages/BankReconciliationPage'
+import LedgerReconciliationPage from './pages/LedgerReconciliationPage'
 import AuditAssistantPage from './pages/AuditAssistantPage'
+import AuditIntelligencePage from './pages/AuditIntelligencePage'
 import ReportsPage from './pages/ReportsPage'
 import SettingsPage from './pages/SettingsPage'
 import AiCopilotPage from './pages/AiCopilotPage'
@@ -48,7 +50,9 @@ export default function App() {
         <Route path="invoice-processing" element={<InvoiceProcessingPage />} />
         <Route path="gst-reconciliation" element={<GstReconciliationPage />} />
         <Route path="bank-reconciliation" element={<BankReconciliationPage />} />
+        <Route path="ledger-reconciliation" element={<LedgerReconciliationPage />} />
         <Route path="audit" element={<AuditAssistantPage />} />
+        <Route path="audit-intelligence" element={<AuditIntelligencePage />} />
         <Route path="reports" element={<ReportsPage />} />
         <Route path="settings" element={<SettingsPage />} />
         <Route path="ai-copilot" element={<AiCopilotPage />} />

@@ -5,7 +5,7 @@ import {
   LayoutDashboard, FileSpreadsheet, Brain, MessageSquare, FolderOpen,
   Users, Shield, BookCheck, GitCompare, Receipt, Calculator,
   Bot, BarChart3, Plug, History, Bell, Settings, HelpCircle,
-  ChevronLeft, ChevronRight, Zap, Building2
+  ChevronLeft, ChevronRight, Zap, Building2, ShieldAlert
 } from 'lucide-react'
 
 interface NavItem {
@@ -91,10 +91,24 @@ const navGroups: NavGroup[] = [
         isAvailable: true,
       },
       {
+        id: 'ledger-reconciliation',
+        label: 'Ledger Reconciliation',
+        path: '/ledger-reconciliation',
+        icon: <BookCheck size={16} />,
+        isAvailable: true,
+      },
+      {
         id: 'audit',
         label: 'Audit Assistant',
         path: '/audit',
         icon: <Shield size={16} />,
+        isAvailable: true,
+      },
+      {
+        id: 'audit-intelligence',
+        label: 'AI Risk Analysis',
+        path: '/audit-intelligence',
+        icon: <ShieldAlert size={16} />,
         isAvailable: true,
       },
     ],
