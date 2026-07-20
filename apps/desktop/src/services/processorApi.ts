@@ -15,10 +15,24 @@ async function getInstance(): Promise<AxiosInstance> {
 
   _instance = axios.create({
     baseURL: `http://127.0.0.1:${_port}`,
-    timeout: 120000, // 2 minutes for OCR
-    headers: {
-      'Content-Type': 'application/json',
-    },
+    timeout: 120000,
+    headers: { 'Content-Type': 'application/json' },
+  })
+
+  // Attach JWT token to every request automatically
+  _instance.interceptors.request.use((config) => {
+    try {
+      const stored = localStorage.getItem('ca-copilot-auth')
+      if (stored) {
+        const parsed = JSON.parse(stored)
+        const token = parsed?.state?.token
+        if (token) {
+          config.headers = config.headers || {}
+          config.headers['Authorization'] = `Bearer ${token}`
+        }
+      }
+    } catch {}
+    return config
   })
 
   return _instance
@@ -400,7 +414,24 @@ export const processorApi = {
       responseType: 'blob'
     })
     return response.data
-  }
+  },
+
+  // ── Auth endpoints ──────────────────────────────────────────────────────────
+
+  async login(email: string, password: string): Promise<{ access_token: string; token_type: string; user: any }> {
+    const api = await getInstance()
+    const form = new FormData()
+    form.append('email', email)
+    form.append('password', password)
+    const res = await api.post('/firm/auth/login', form, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    })
+    return res.data
+  },
+
+  async getMe(): Promise<any> {
+    const api = await getInstance()
+    const res = await api.get('/firm/auth/me')
+    return res.data
+  },
 }
-
-

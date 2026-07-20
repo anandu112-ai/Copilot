@@ -16,11 +16,13 @@ import json
 import uuid
 import sqlite3
 import bcrypt
-from datetime import datetime
+import secrets
+from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
 
-from fastapi import APIRouter, Form, HTTPException, Query
+from fastapi import APIRouter, Form, HTTPException, Query, Header
 from loguru import logger
+from jose import jwt, JWTError
 
 from database.db import get_db_connection
 
@@ -28,11 +30,26 @@ router = APIRouter(prefix="/firm", tags=["CA Firm Management"])
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
+JWT_SECRET = "CA_COPILOT_JWT_SECRET_KEY_2026_CHANGE_IN_PROD"
+JWT_ALGORITHM = "HS256"
+JWT_EXPIRE_HOURS = 12
+
 def hash_password(plain: str) -> str:
     return bcrypt.hashpw(plain.encode(), bcrypt.gensalt()).decode()
 
 def verify_password(plain: str, hashed: str) -> bool:
     return bcrypt.checkpw(plain.encode(), hashed.encode())
+
+def create_access_token(payload: dict) -> str:
+    data = payload.copy()
+    data["exp"] = datetime.utcnow() + timedelta(hours=JWT_EXPIRE_HOURS)
+    return jwt.encode(data, JWT_SECRET, algorithm=JWT_ALGORITHM)
+
+def decode_token(token: str) -> dict:
+    try:
+        return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Token invalid or expired")
 
 # ── DB Schema Init ────────────────────────────────────────────────────────────
 
@@ -261,7 +278,7 @@ async def login(
     if not password_hash or not verify_password(password, password_hash):
         raise HTTPException(status_code=401, detail="Invalid email or password")
 
-    return {
+    profile = {
         "id": staff["id"],
         "name": staff["name"],
         "email": staff["email"],
@@ -270,11 +287,18 @@ async def login(
         "is_admin": bool(staff["is_admin"]),
         "permissions": json.loads(staff["permissions"] or "[]"),
     }
+    token = create_access_token({"sub": staff["email"], "role": staff["role"], "is_admin": bool(staff["is_admin"])})
+    return {"access_token": token, "token_type": "bearer", "user": profile}
 
 
 @router.get("/auth/me")
-async def get_me(email: str):
-    """Return staff profile by email (for session restoration)."""
+async def get_me(authorization: Optional[str] = Header(None)):
+    """Return staff profile from JWT token (for session restoration)."""
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="No token provided")
+    token = authorization.split(" ", 1)[1]
+    payload = decode_token(token)
+    email = payload.get("sub")
     conn = get_db_connection()
     cursor = conn.cursor()
     cursor.execute("SELECT * FROM firm_staff WHERE email = ?", (email,))

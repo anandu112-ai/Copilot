@@ -2,6 +2,11 @@ import { Routes, Route, Navigate } from 'react-router-dom'
 import { useEffect } from 'react'
 import AppLayout from './components/layout/AppLayout'
 import { useSettingsStore } from './stores/settingsStore'
+import { useAuthStore } from './stores/authStore'
+import { processorApi } from './services/processorApi'
+
+// Auth
+import LoginPage from './pages/LoginPage'
 
 // Pages
 import DashboardPage from './pages/DashboardPage'
@@ -21,6 +26,7 @@ import AiAutomationPage from './pages/AiAutomationPage'
 import EnterprisePage from './pages/EnterprisePage'
 import IntegrationsPage from './pages/IntegrationsPage'
 import CompliancePage from './pages/CompliancePage'
+import VouchingPage from './pages/VouchingPage'
 
 // Legacy / Support Pages
 import PdfToExcelPage from './pages/PdfToExcelPage'
@@ -30,6 +36,7 @@ import HelpPage from './pages/HelpPage'
 
 export default function App() {
   const { loadSettings, theme } = useSettingsStore()
+  const { isAuthenticated, token, setAuth, logout } = useAuthStore()
 
   useEffect(() => {
     loadSettings()
@@ -44,6 +51,21 @@ export default function App() {
       root.classList.add(theme)
     }
   }, [theme])
+
+  // Session restore — verify persisted token is still valid on app boot
+  useEffect(() => {
+    if (token && isAuthenticated) {
+      processorApi.getMe().catch(() => {
+        // Token expired or invalid — force logout
+        logout()
+      })
+    }
+  }, []) // runs once on mount
+
+  // ── If not authenticated, show login screen ──────────────────────────────
+  if (!isAuthenticated) {
+    return <LoginPage />
+  }
 
   return (
     <Routes>
@@ -66,7 +88,8 @@ export default function App() {
         <Route path="integrations" element={<IntegrationsPage />} />
         <Route path="compliance" element={<CompliancePage />} />
         <Route path="firm" element={<FirmManagementPage />} />
-        
+        <Route path="vouching" element={<VouchingPage />} />
+
         {/* Support paths */}
         <Route path="pdf-to-excel" element={<PdfToExcelPage />} />
         <Route path="chat-with-documents" element={<ChatWithDocumentsPage />} />
@@ -76,4 +99,3 @@ export default function App() {
     </Routes>
   )
 }
-

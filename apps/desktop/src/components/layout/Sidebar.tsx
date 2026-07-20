@@ -1,11 +1,12 @@
 import { NavLink, useLocation } from 'react-router-dom'
 import { useUIStore } from '../../stores/uiStore'
+import { useAuthStore } from '../../stores/authStore'
 import { cn } from '../../utils/cn'
 import {
   LayoutDashboard, FileSpreadsheet, Brain, MessageSquare, FolderOpen,
   Users, Shield, BookCheck, GitCompare, Receipt, Calculator,
   Bot, BarChart3, Plug, History, Bell, Settings, HelpCircle,
-  ChevronLeft, ChevronRight, Zap, Building2, ShieldAlert, BrainCircuit, Rocket
+  ChevronLeft, ChevronRight, Zap, Building2, ShieldAlert, BrainCircuit, Rocket, LogOut
 } from 'lucide-react'
 
 interface NavItem {
@@ -281,20 +282,35 @@ export default function Sidebar() {
         ))}
       </nav>
 
-      {/* Footer */}
-      {!sidebarCollapsed && (
-        <div className="px-3 py-3 border-t border-surface-800 flex-shrink-0">
+      {/* Footer — User profile + Logout */}
+      <div className="px-3 py-3 border-t border-surface-800 flex-shrink-0">
+        {!sidebarCollapsed ? (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
-            <div className="w-6 h-6 rounded-full bg-brand-600 flex items-center justify-center flex-shrink-0">
-              <Users size={12} className="text-white" />
+            <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center flex-shrink-0 text-xs font-black text-white">
+              {user?.name?.[0]?.toUpperCase() ?? 'U'}
             </div>
-            <div className="min-w-0">
-              <div className="text-xs font-medium text-surface-200 truncate">Local Workspace</div>
-              <div className="text-xs text-surface-500">Offline · Private</div>
+            <div className="min-w-0 flex-1">
+              <div className="text-xs font-semibold text-surface-200 truncate">{user?.name ?? 'User'}</div>
+              <div className="text-[10px] text-surface-500 truncate">{user?.role ?? 'Staff'}</div>
             </div>
+            <button
+              onClick={logout}
+              title="Sign out"
+              className="p-1.5 rounded-lg text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all flex-shrink-0"
+            >
+              <LogOut size={13} />
+            </button>
           </div>
-        </div>
-      )}
+        ) : (
+          <button
+            onClick={logout}
+            title="Sign out"
+            className="w-full flex justify-center p-1.5 rounded-lg text-surface-500 hover:text-red-400 hover:bg-red-500/10 transition-all"
+          >
+            <LogOut size={14} />
+          </button>
+        )}
+      </div>
     </aside>
   )
 }
