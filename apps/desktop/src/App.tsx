@@ -8,6 +8,7 @@ import { useAuthStore } from './stores/authStore'
 import { processorApi } from './services/processorApi'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { GlobalSearchModal } from './components/common/GlobalSearchModal'
+import { CommandPalette } from './components/common/CommandPalette'
 
 // Auth
 import LoginPage from './pages/LoginPage'
@@ -117,6 +118,7 @@ export default function App() {
   return (
     <ErrorBoundary context="the application">
       <GlobalSearchModal />
+      <CommandPalette />
       <Routes>
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />

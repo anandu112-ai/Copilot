@@ -880,3 +880,251 @@ def create_document_version(
     if not version:
         raise HTTPException(status_code=500, detail='Failed to save version')
     return {"document_id": document_id, "version_number": version, "success": True}
+
+
+# ── Accounting Integrity APIs ─────────────────────────────────────────────────
+
+@router.post("/integrity/double-entry")
+def api_double_entry(
+    entries: List[Dict[str, Any]],
+    authorization: Optional[str] = Header(default=None),
+):
+    """Validate that a set of journal entries balance (debits == credits)."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.accounting_integrity import validate_double_entry
+    result = validate_double_entry(entries)
+    return {
+        'valid': result.valid,
+        'total_debit': float(result.total_debit),
+        'total_credit': float(result.total_credit),
+        'difference': float(result.difference),
+        'errors': result.errors,
+        'warnings': result.warnings,
+    }
+
+
+@router.get("/integrity/trial-balance")
+def api_trial_balance(
+    client_id: str = Query(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Compute trial balance for a client from ledger entries."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.accounting_integrity import verify_trial_balance
+    result = verify_trial_balance(client_id)
+    return {
+        'balanced': result.balanced,
+        'total_debit': float(result.total_debit),
+        'total_credit': float(result.total_credit),
+        'difference': float(result.difference),
+        'ledger_balances': {k: {kk: float(vv) for kk, vv in v.items()} for k, v in result.ledger_balances.items()},
+        'errors': result.errors,
+    }
+
+
+@router.post("/integrity/check-duplicate-voucher")
+def api_check_duplicate_voucher(
+    client_id: str = Form(...),
+    voucher_number: str = Form(...),
+    voucher_type: str = Form(...),
+    date: str = Form(...),
+    amount: float = Form(...),
+    exclude_id: Optional[str] = Form(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Check if a voucher is a duplicate before saving."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.accounting_integrity import check_duplicate_voucher
+    result = check_duplicate_voucher(client_id, voucher_number, voucher_type, date, amount, exclude_id)
+    return {
+        'is_duplicate': result.is_duplicate,
+        'duplicate_ids': result.duplicate_ids,
+        'match_reason': result.match_reason,
+    }
+
+
+@router.get("/integrity/voucher-sequence")
+def api_voucher_sequence(
+    client_id: str = Query(...),
+    voucher_type: str = Query(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Validate voucher number sequence for gaps and duplicates."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.accounting_integrity import validate_voucher_sequence
+    result = validate_voucher_sequence(client_id, voucher_type)
+    return {
+        'valid': result.valid,
+        'gaps': result.gaps,
+        'duplicates': result.duplicates,
+        'errors': result.errors,
+    }
+
+
+@router.get("/integrity/ledger-balance")
+def api_ledger_balance(
+    client_id: str = Query(...),
+    ledger_type: str = Query(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Reconcile computed vs stated running balances in a ledger."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.accounting_integrity import reconcile_ledger_balance
+    return reconcile_ledger_balance(client_id, ledger_type)
+
+
+# ── AI Governance APIs ────────────────────────────────────────────────────────
+
+@router.get("/ai-governance/logs")
+def get_ai_governance_logs(
+    task_type: Optional[str] = Query(default=None),
+    client_id: Optional[str] = Query(default=None),
+    limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0),
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.ai_governance import get_governance_logs
+    return get_governance_logs(task_type=task_type, client_id=client_id, limit=limit, offset=offset)
+
+
+@router.post("/ai-governance/override")
+def record_ai_override(
+    log_id: str = Form(...),
+    reason: str = Form(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Record that a user overrode an AI recommendation."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    payload = decode_token(authorization.split(' ', 1)[1])
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE ai_governance_logs SET user_override=1, override_reason=? WHERE id=?",
+        (reason, log_id)
+    )
+    conn.commit()
+    conn.close()
+    from database.db import log_audit_event
+    log_audit_event(module='ai_governance', action='user_override',
+                    detail=f'Log {log_id}: {reason}', user_id=payload.get('sub'))
+    return {"success": True}
+
+
+@router.post("/ai-governance/approve")
+def approve_ai_output(
+    log_id: str = Form(...),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Mark an AI output as reviewed and approved."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    payload = decode_token(authorization.split(' ', 1)[1])
+    now = datetime.utcnow().isoformat()
+    conn = get_db_connection()
+    conn.execute(
+        "UPDATE ai_governance_logs SET final_approved=1, approved_by=?, approved_at=? WHERE id=?",
+        (payload.get('name') or payload.get('sub'), now, log_id)
+    )
+    conn.commit()
+    conn.close()
+    return {"success": True, "approved_at": now}
+
+
+# ── Workflow Engine APIs ─────────────────────────────────────────────────────
+
+@router.get("/workflows/templates")
+def list_workflow_templates(authorization: Optional[str] = Header(default=None)):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    conn = get_db_connection()
+    rows = conn.execute('SELECT * FROM workflow_templates WHERE is_active=1').fetchall()
+    conn.close()
+    return [dict(r) for r in rows]
+
+
+@router.post("/workflows/start")
+def start_workflow(
+    entity_type: str = Form(...),
+    entity_id: str = Form(...),
+    title: str = Form(...),
+    template_id: str = Form(default='wf-invoice-approval'),
+    client_id: Optional[str] = Form(default=None),
+    due_date: Optional[str] = Form(default=None),
+    priority: str = Form(default='medium'),
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    payload = decode_token(authorization.split(' ', 1)[1])
+    from processors.workflow_engine import create_workflow
+    instance_id = create_workflow(
+        entity_type=entity_type, entity_id=entity_id, title=title,
+        template_id=template_id, client_id=client_id,
+        started_by=payload.get('name') or payload.get('sub'),
+        due_date=due_date, priority=priority,
+    )
+    return {'instance_id': instance_id, 'success': True}
+
+
+@router.post("/workflows/{instance_id}/action")
+def workflow_action(
+    instance_id: str,
+    action: str = Form(...),
+    comments: str = Form(default=''),
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    payload = decode_token(authorization.split(' ', 1)[1])
+    from processors.workflow_engine import advance_workflow
+    try:
+        updated = advance_workflow(
+            instance_id=instance_id, action=action,
+            acted_by=payload.get('name') or payload.get('sub'),
+            comments=comments,
+        )
+        return {'success': True, 'instance': updated}
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.get("/workflows/{instance_id}")
+def get_workflow(
+    instance_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.workflow_engine import get_workflow_instance
+    inst = get_workflow_instance(instance_id)
+    if not inst:
+        raise HTTPException(status_code=404, detail='Workflow instance not found')
+    return inst
+
+
+@router.get("/workflows")
+def list_workflows(
+    client_id: Optional[str] = Query(default=None),
+    entity_type: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from processors.workflow_engine import get_pending_workflows
+    return get_pending_workflows(client_id=client_id, entity_type=entity_type)
