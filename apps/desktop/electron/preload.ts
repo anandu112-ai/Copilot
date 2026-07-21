@@ -159,8 +159,21 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Phase 8: QA Tests
     getQaTestResults: () => ipcRenderer.invoke('db:get-qa-test-results'),
     insertQaTestResult: (r: any) => ipcRenderer.invoke('db:insert-qa-test-result', r),
+
+    getAuditLogs: (params?: Record<string, unknown>) =>
+      ipcRenderer.invoke('db:get-audit-logs', params ?? {}),
+    logAuditEvent: (params: Record<string, unknown>) =>
+      ipcRenderer.invoke('db:log-audit-event', params),
   },
 
+  // Backup & Restore
+  backup: {
+    create: (label?: string) => ipcRenderer.invoke('backup:create', label),
+    list: () => ipcRenderer.invoke('backup:list'),
+    restore: (backupPath: string) => ipcRenderer.invoke('backup:restore', backupPath),
+    openFolder: () => ipcRenderer.invoke('backup:open-folder'),
+    prune: (keepCount?: number) => ipcRenderer.invoke('backup:prune', keepCount),
+  },
 
   // Theme
   getNativeTheme: () => ipcRenderer.invoke('theme:get'),

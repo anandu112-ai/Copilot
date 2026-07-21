@@ -13,24 +13,44 @@ FastAPI router providing:
   - Action Notifications (Module 12)
 """
 import json
+import os
 import uuid
 import sqlite3
 import bcrypt
 import secrets
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, Form, HTTPException, Query, Header
 from loguru import logger
 from jose import jwt, JWTError
 
-from database.db import get_db_connection
+from database.db import get_db_connection, log_audit_event
 
 router = APIRouter(prefix="/firm", tags=["CA Firm Management"])
 
 # ── Auth helpers ──────────────────────────────────────────────────────────────
 
-JWT_SECRET = "CA_COPILOT_JWT_SECRET_KEY_2026_CHANGE_IN_PROD"
+def _load_jwt_secret() -> str:
+    # 1. Environment variable (production)
+    env_secret = os.environ.get('JWT_SECRET')
+    if env_secret and len(env_secret) >= 32:
+        return env_secret
+    # 2. Persistent file-based secret (dev/local)
+    secret_file = Path(__file__).parent.parent.parent / 'database' / '.jwt_secret'
+    if secret_file.exists():
+        s = secret_file.read_text().strip()
+        if len(s) >= 32:
+            return s
+    import secrets as _secrets
+    generated = _secrets.token_hex(32)
+    secret_file.parent.mkdir(parents=True, exist_ok=True)
+    secret_file.write_text(generated)
+    logger.warning('JWT secret generated and saved to disk. Set JWT_SECRET env var in production.')
+    return generated
+
+JWT_SECRET = _load_jwt_secret()
 JWT_ALGORITHM = "HS256"
 JWT_EXPIRE_HOURS = 12
 
@@ -50,6 +70,16 @@ def decode_token(token: str) -> dict:
         return jwt.decode(token, JWT_SECRET, algorithms=[JWT_ALGORITHM])
     except JWTError:
         raise HTTPException(status_code=401, detail="Token invalid or expired")
+
+def _require_admin(authorization: Optional[str]):
+    """Decode JWT and enforce admin role."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    token = authorization.split(' ', 1)[1]
+    payload = decode_token(token)
+    if not payload.get('is_admin'):
+        raise HTTPException(status_code=403, detail='Admin access required')
+    return payload
 
 # ── DB Schema Init ────────────────────────────────────────────────────────────
 
@@ -288,6 +318,14 @@ async def login(
         "permissions": json.loads(staff["permissions"] or "[]"),
     }
     token = create_access_token({"sub": staff["email"], "role": staff["role"], "is_admin": bool(staff["is_admin"])})
+    log_audit_event(
+        module='auth',
+        action='login',
+        status='success',
+        detail=f'User {email} logged in',
+        user_id=str(staff["id"]),
+        user_name=staff["name"],
+    )
     return {"access_token": token, "token_type": "bearer", "user": profile}
 
 
@@ -614,3 +652,231 @@ async def get_notifications(user_id: str):
     rows = [dict(r) for r in cursor.fetchall()]
     conn.close()
     return rows
+
+
+# ── Audit Logs API ────────────────────────────────────────────────────────────
+
+@router.get("/audit-logs")
+def get_audit_logs(
+    limit: int = Query(default=100, le=500),
+    offset: int = Query(default=0),
+    module: Optional[str] = Query(default=None),
+    user_id: Optional[str] = Query(default=None),
+    client_id: Optional[str] = Query(default=None),
+    search: Optional[str] = Query(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Retrieve paginated, filterable audit logs."""
+    _require_admin(authorization)
+    conn = get_db_connection()
+    clauses = []
+    params = []
+    if module:
+        clauses.append("module = ?")
+        params.append(module)
+    if user_id:
+        clauses.append("user_id = ?")
+        params.append(user_id)
+    if client_id:
+        clauses.append("client_id = ?")
+        params.append(client_id)
+    if search:
+        clauses.append("(action LIKE ? OR detail LIKE ? OR user_name LIKE ?)")
+        like = f"%{search}%"
+        params.extend([like, like, like])
+    where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
+    rows = conn.execute(
+        f"SELECT * FROM audit_logs {where} ORDER BY timestamp DESC LIMIT ? OFFSET ?",
+        params + [limit, offset]
+    ).fetchall()
+    total = conn.execute(f"SELECT COUNT(*) FROM audit_logs {where}", params).fetchone()[0]
+    conn.close()
+    return {"total": total, "logs": [dict(r) for r in rows]}
+
+
+# ── Global Search ──────────────────────────────────────────────────────────
+
+@router.get("/search")
+def global_search(
+    q: str = Query(..., min_length=2, description="Search query"),
+    limit: int = Query(default=20, le=100),
+    authorization: Optional[str] = Header(default=None),
+):
+    """
+    Global search across clients, tasks, compliance deadlines, audit findings,
+    users, and audit trail.
+    Returns grouped results by entity type.
+    """
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    token = authorization.split(' ', 1)[1]
+    decode_token(token)  # validate
+
+    like = f"%{q}%"
+    conn = get_db_connection()
+    results = {}
+
+    # Clients
+    rows = conn.execute(
+        "SELECT id, name, 'client' as type FROM clients WHERE name LIKE ? LIMIT ?",
+        (like, limit)
+    ).fetchall()
+    if rows:
+        results['clients'] = [dict(r) for r in rows]
+
+    # Tasks (if table exists)
+    try:
+        rows = conn.execute(
+            """SELECT id, title as name, status, task_type, 'task' as type
+               FROM tasks WHERE title LIKE ? OR description LIKE ? LIMIT ?""",
+            (like, like, limit)
+        ).fetchall()
+        if rows:
+            results['tasks'] = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Audit findings
+    try:
+        rows = conn.execute(
+            """SELECT id, title as name, severity, status, 'audit_finding' as type
+               FROM audit_findings WHERE title LIKE ? OR description LIKE ? LIMIT ?""",
+            (like, like, limit)
+        ).fetchall()
+        if rows:
+            results['audit_findings'] = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Compliance deadlines
+    try:
+        rows = conn.execute(
+            """SELECT id, compliance_type as name, due_date, status, 'compliance' as type
+               FROM client_compliance_deadlines WHERE compliance_type LIKE ? LIMIT ?""",
+            (like, limit)
+        ).fetchall()
+        if rows:
+            results['compliance'] = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Users
+    try:
+        rows = conn.execute(
+            """SELECT id, name, email, role, 'user' as type
+               FROM users WHERE name LIKE ? OR email LIKE ? LIMIT ?""",
+            (like, like, limit)
+        ).fetchall()
+        if rows:
+            results['users'] = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    # Vouchers
+    try:
+        rows = conn.execute(
+            """SELECT id, voucher_number as name, voucher_type, approval_status, 'voucher' as type
+               FROM vouchers WHERE voucher_number LIKE ? OR narration LIKE ? LIMIT ?""",
+            (like, like, limit)
+        ).fetchall()
+        if rows:
+            results['vouchers'] = [dict(r) for r in rows]
+    except Exception:
+        pass
+
+    conn.close()
+    total = sum(len(v) for v in results.values())
+    return {"query": q, "total": total, "results": results}
+
+
+# ── Diagnostic Report ─────────────────────────────────────────────────────────
+
+@router.get("/diagnostics")
+def get_diagnostics(
+    authorization: Optional[str] = Header(default=None),
+):
+    """Generate a full diagnostic report for support and troubleshooting."""
+    _require_admin(authorization)
+
+    import sys, platform
+    conn = get_db_connection()
+    tables = {}
+    try:
+        table_names = [
+            'clients', 'bank_transactions', 'ledger_entries', 'gst_invoices',
+            'audit_trail', 'audit_findings', 'audit_logs', 'vouchers',
+            'users', 'tasks',
+        ]
+        for t in table_names:
+            try:
+                row = conn.execute(f'SELECT COUNT(*) FROM {t}').fetchone()
+                tables[t] = row[0] if row else 0
+            except Exception:
+                tables[t] = 'N/A'
+    finally:
+        conn.close()
+
+    recent_errors = []
+    try:
+        c2 = get_db_connection()
+        rows = c2.execute(
+            "SELECT timestamp, module, action, detail FROM audit_logs "
+            "WHERE status='error' ORDER BY timestamp DESC LIMIT 20"
+        ).fetchall()
+        recent_errors = [dict(r) for r in rows]
+        c2.close()
+    except Exception:
+        pass
+
+    return {
+        "generated_at": datetime.utcnow().isoformat(),
+        "version": "1.0.0",
+        "python": sys.version,
+        "platform": platform.platform(),
+        "table_counts": tables,
+        "recent_errors": recent_errors,
+    }
+
+
+# ── Document Versioning ─────────────────────────────────────────────────────────
+
+@router.get("/documents/{document_id}/versions")
+def get_document_versions(
+    document_id: str,
+    authorization: Optional[str] = Header(default=None),
+):
+    """Return all saved versions of a document."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    decode_token(authorization.split(' ', 1)[1])
+    from database.db import get_document_versions as _get_versions
+    return {"document_id": document_id, "versions": _get_versions(document_id)}
+
+
+@router.post("/documents/{document_id}/versions")
+def create_document_version(
+    document_id: str,
+    document_name: str = Form(...),
+    document_type: str = Form(default=''),
+    confidence: str = Form(default=''),
+    notes: str = Form(default=''),
+    client_id: str = Form(default=None),
+    authorization: Optional[str] = Header(default=None),
+):
+    """Manually create a new version snapshot for a document."""
+    if not authorization or not authorization.startswith('Bearer '):
+        raise HTTPException(status_code=401, detail='Authentication required')
+    payload = decode_token(authorization.split(' ', 1)[1])
+    from database.db import save_document_version
+    version = save_document_version(
+        document_id=document_id,
+        document_name=document_name,
+        document_type=document_type,
+        confidence=confidence or None,
+        created_by=payload.get('name') or payload.get('sub'),
+        client_id=client_id,
+        notes=notes or None,
+    )
+    if not version:
+        raise HTTPException(status_code=500, detail='Failed to save version')
+    return {"document_id": document_id, "version_number": version, "success": True}

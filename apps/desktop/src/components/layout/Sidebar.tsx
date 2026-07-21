@@ -214,6 +214,7 @@ const navGroups: NavGroup[] = [
 
 export default function Sidebar() {
   const { sidebarCollapsed, toggleSidebar } = useUIStore()
+  const { user, logout } = useAuthStore()
   const location = useLocation()
 
   return (

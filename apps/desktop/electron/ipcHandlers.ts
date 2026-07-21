@@ -3,12 +3,14 @@ import path from 'path'
 import fs from 'fs'
 import type { PythonProcessManager } from './pythonManager'
 import type { DatabaseManager } from './database'
+import { BackupManager } from './backupManager'
 
 export function registerIpcHandlers(
   ipcMain: IpcMain,
   pythonManager: PythonProcessManager,
   dbManager: DatabaseManager
 ): void {
+  const backupManager = new BackupManager()
 
   // ── Python Service ─────────────────────────────────────────────────────────
   ipcMain.handle('python:get-port', () => pythonManager.getPort())
@@ -349,7 +351,52 @@ export function registerIpcHandlers(
   ipcMain.handle('db:get-qa-test-results', () => dbManager.getQaTestResults())
   ipcMain.handle('db:insert-qa-test-result', (_, r: any) => { dbManager.insertQaTestResult(r); return { success: true } })
 
+  // ── Audit Logs ──────────────────────────────────────────────────────────────
+  ipcMain.handle('db:get-audit-logs', (_, params: Record<string, unknown>) =>
+    dbManager.getAuditLogs(params as Parameters<typeof dbManager.getAuditLogs>[0])
+  )
+
+  ipcMain.handle('db:log-audit-event', (_, params: Record<string, unknown>) => {
+    dbManager.logAuditEvent(params as Parameters<typeof dbManager.logAuditEvent>[0])
+    return { success: true }
+  })
+
   // ── Theme ──────────────────────────────────────────────────────────────────
   ipcMain.handle('theme:get', () => nativeTheme.shouldUseDarkColors ? 'dark' : 'light')
+
+  // ── Backup & Restore ──────────────────────────────────────────────────────────────
+  ipcMain.handle('backup:create', (_, label?: string) => {
+    return backupManager.createBackup(label)
+  })
+
+  ipcMain.handle('backup:list', () => {
+    return backupManager.listBackups()
+  })
+
+  ipcMain.handle('backup:restore', async (_, backupPath: string) => {
+    // Show confirmation dialog
+    const { dialog } = await import('electron')
+    const choice = await dialog.showMessageBox({
+      type: 'warning',
+      buttons: ['Restore', 'Cancel'],
+      defaultId: 1,
+      title: 'Restore Database',
+      message: 'Restore this backup?',
+      detail: 'The current database will be replaced. A safety backup will be created first. The application will need to restart.',
+    })
+    if (choice.response !== 0) return { success: false, cancelled: true }
+    return backupManager.restoreBackup(backupPath)
+  })
+
+  ipcMain.handle('backup:open-folder', async () => {
+    const { shell } = await import('electron')
+    await shell.openPath(backupManager.backupDirectory)
+    return { success: true }
+  })
+
+  ipcMain.handle('backup:prune', (_, keepCount = 10) => {
+    const deleted = backupManager.pruneBackups(keepCount)
+    return { deleted }
+  })
 }
 

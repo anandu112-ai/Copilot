@@ -6,6 +6,8 @@ import { ErrorBoundary } from './components/common/ErrorBoundary'
 import { useSettingsStore } from './stores/settingsStore'
 import { useAuthStore } from './stores/authStore'
 import { processorApi } from './services/processorApi'
+import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
+import { GlobalSearchModal } from './components/common/GlobalSearchModal'
 
 // Auth
 import LoginPage from './pages/LoginPage'
@@ -40,6 +42,8 @@ export default function App() {
   const { loadSettings, theme } = useSettingsStore()
   const { isAuthenticated, token, setAuth, logout } = useAuthStore()
 
+  useKeyboardShortcuts()
+
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'failed'>('checking')
 
   useEffect(() => {
@@ -47,13 +51,25 @@ export default function App() {
   }, [loadSettings])
 
   useEffect(() => {
-    const root = document.documentElement
-    root.classList.remove('dark', 'light')
-    if (theme === 'system') {
-      root.classList.add(window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light')
-    } else {
-      root.classList.add(theme)
+    const applyTheme = (t: typeof theme) => {
+      const root = document.documentElement
+      root.classList.remove('dark', 'light')
+      if (t === 'system') {
+        root.classList.add(
+          window.matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light'
+        )
+      } else {
+        root.classList.add(t)
+      }
     }
+
+    applyTheme(theme)
+
+    // Listen for OS theme changes when 'system' is selected
+    const mq = window.matchMedia('(prefers-color-scheme: dark)')
+    const listener = () => { if (theme === 'system') applyTheme('system') }
+    mq.addEventListener('change', listener)
+    return () => mq.removeEventListener('change', listener)
   }, [theme])
 
   // Session restore — verify persisted token is still valid on app boot
@@ -100,6 +116,7 @@ export default function App() {
 
   return (
     <ErrorBoundary context="the application">
+      <GlobalSearchModal />
       <Routes>
       <Route path="/" element={<AppLayout />}>
         <Route index element={<Navigate to="/dashboard" replace />} />

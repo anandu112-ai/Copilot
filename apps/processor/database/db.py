@@ -319,6 +319,29 @@ def init_db():
         )
         """)
 
+        # 17. Audit Logs Table - centralized action logging
+        cursor.execute("""
+CREATE TABLE IF NOT EXISTS audit_logs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    timestamp TEXT DEFAULT (datetime('now')),
+    user_id TEXT,
+    user_name TEXT,
+    client_id TEXT,
+    module TEXT NOT NULL,
+    action TEXT NOT NULL,
+    status TEXT DEFAULT 'success',
+    detail TEXT,
+    ip_address TEXT,
+    execution_ms INTEGER,
+    metadata TEXT
+)
+""")
+        # Index for fast log queries
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_timestamp ON audit_logs(timestamp DESC)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON audit_logs(module)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_audit_logs_client ON audit_logs(client_id)")
+
         # Seed default model routing if not present
         cursor.execute("SELECT count(*) FROM ai_model_routing")
         if cursor.fetchone()[0] == 0:
@@ -333,6 +356,50 @@ def init_db():
             INSERT INTO ai_model_routing (task_type, provider, model_name, confidence_threshold, requires_approval)
             VALUES (?, ?, ?, ?, ?)
             """, default_routings)
+
+        # 18. Document Versions Table — version control for extracted data
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS document_versions (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            document_id TEXT NOT NULL,
+            document_name TEXT NOT NULL,
+            document_type TEXT,
+            version_number INTEGER NOT NULL DEFAULT 1,
+            sha256_hash TEXT,
+            file_size_bytes INTEGER,
+            extracted_data TEXT,
+            confidence TEXT,
+            created_by TEXT,
+            notes TEXT,
+            is_current INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_doc ON document_versions(document_id)")
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_doc_versions_current ON document_versions(document_id, is_current)")
+
+        # 19. Report Versions Table
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS report_versions (
+            id TEXT PRIMARY KEY,
+            client_id TEXT,
+            report_type TEXT NOT NULL,
+            version_number INTEGER NOT NULL DEFAULT 1,
+            title TEXT,
+            output_path TEXT,
+            generated_by TEXT,
+            status TEXT DEFAULT 'draft',
+            approved_by TEXT,
+            approved_at TEXT,
+            notes TEXT,
+            is_current INTEGER DEFAULT 1,
+            created_at TEXT DEFAULT (datetime('now')),
+            FOREIGN KEY (client_id) REFERENCES clients(id) ON DELETE SET NULL
+        )
+        """)
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_report_versions_client ON report_versions(client_id, report_type)")
 
         conn.commit()
         logger.info("Database schema initialized successfully.")
@@ -350,3 +417,109 @@ try:
 except Exception as e:
     logger.error(f'Database initialization failed: {e}')
     raise RuntimeError(f'Cannot start CA Copilot: database init failed — {e}') from e
+
+
+def log_audit_event(
+    module: str,
+    action: str,
+    status: str = 'success',
+    detail: str = '',
+    user_id: str = None,
+    user_name: str = None,
+    client_id: str = None,
+    execution_ms: int = None,
+    metadata: dict = None,
+) -> None:
+    """Write a row to audit_logs. Never raises — audit failures must not break business logic."""
+    try:
+        conn = get_db_connection()
+        import json as _json
+        conn.execute(
+            """
+            INSERT INTO audit_logs (user_id, user_name, client_id, module, action, status, detail, execution_ms, metadata)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            (
+                user_id, user_name, client_id, module, action, status,
+                detail[:2000] if detail else None,
+                execution_ms,
+                _json.dumps(metadata) if metadata else None,
+            )
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        logger.warning(f'Audit log write failed (non-fatal): {e}')
+
+
+def save_document_version(
+    document_id: str,
+    document_name: str,
+    document_type: str = '',
+    extracted_data: dict = None,
+    sha256_hash: str = None,
+    file_size_bytes: int = None,
+    confidence: str = None,
+    created_by: str = None,
+    client_id: str = None,
+    notes: str = None,
+) -> int:
+    """
+    Save a new version of a document's extracted data.
+    Marks previous versions as not current.
+    Returns the new version number.
+    """
+    import json as _json
+    conn = get_db_connection()
+    try:
+        # Get next version number
+        row = conn.execute(
+            "SELECT MAX(version_number) FROM document_versions WHERE document_id = ?",
+            (document_id,)
+        ).fetchone()
+        next_version = (row[0] or 0) + 1
+        # Mark existing versions as not current
+        conn.execute(
+            "UPDATE document_versions SET is_current = 0 WHERE document_id = ?",
+            (document_id,)
+        )
+        # Insert new version
+        vid = str(__import__('uuid').uuid4())
+        conn.execute(
+            """
+            INSERT INTO document_versions
+            (id, client_id, document_id, document_name, document_type,
+             version_number, sha256_hash, file_size_bytes, extracted_data,
+             confidence, created_by, notes, is_current)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)
+            """,
+            (
+                vid, client_id, document_id, document_name, document_type,
+                next_version, sha256_hash, file_size_bytes,
+                _json.dumps(extracted_data) if extracted_data else None,
+                confidence, created_by, notes,
+            )
+        )
+        conn.commit()
+        logger.debug(f'Saved document version {next_version} for {document_name}')
+        return next_version
+    except Exception as e:
+        logger.error(f'Failed to save document version: {e}')
+        conn.rollback()
+        return 0
+    finally:
+        conn.close()
+
+
+def get_document_versions(document_id: str) -> list:
+    """Return all versions of a document, newest first."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT id, version_number, sha256_hash, confidence, created_by, notes, is_current, created_at "
+            "FROM document_versions WHERE document_id = ? ORDER BY version_number DESC",
+            (document_id,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()

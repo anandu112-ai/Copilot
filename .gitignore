@@ -88,3 +88,14 @@ logs/
 
 # Test coverage
 coverage/
+
+# Secrets — never commit
+apps/processor/database/.jwt_secret
+
+# SQLite database files (runtime data)
+apps/processor/reconciliation.db
+apps/processor/reconciliation.db-wal
+apps/processor/reconciliation.db-shm
+*.db-journal
+*.db-wal
+*.db-shm

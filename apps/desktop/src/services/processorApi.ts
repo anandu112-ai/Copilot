@@ -1,5 +1,4 @@
 import axios, { AxiosInstance } from 'axios'
-import axios, { AxiosInstance } from 'axios'
 import type { DocumentType, ExtractionResult } from '../types'
 
 let _port: number | null = null
@@ -472,6 +471,40 @@ export const processorApi = {
   async getMe(): Promise<any> {
     const api = await getInstance()
     const res = await api.get('/firm/auth/me')
+    return res.data
+  },
+
+  async globalSearch(query: string, limit = 20): Promise<{
+    query: string
+    total: number
+    results: Record<string, Array<Record<string, unknown>>>
+  }> {
+    const api = await getInstance()
+    const res = await api.get('/firm/search', { params: { q: query, limit } })
+    return res.data
+  },
+
+  async getDocumentVersions(documentId: string): Promise<{ document_id: string; versions: unknown[] }> {
+    const api = await getInstance()
+    const res = await api.get(`/firm/documents/${documentId}/versions`)
+    return res.data
+  },
+
+  async createDocumentVersion(documentId: string, params: {
+    documentName: string
+    documentType?: string
+    confidence?: string
+    notes?: string
+    clientId?: string
+  }): Promise<{ version_number: number; success: boolean }> {
+    const api = await getInstance()
+    const form = new FormData()
+    form.append('document_name', params.documentName)
+    if (params.documentType) form.append('document_type', params.documentType)
+    if (params.confidence) form.append('confidence', params.confidence)
+    if (params.notes) form.append('notes', params.notes)
+    if (params.clientId) form.append('client_id', params.clientId)
+    const res = await api.post(`/firm/documents/${documentId}/versions`, form)
     return res.data
   },
 }

@@ -448,6 +448,24 @@ export class DatabaseManager {
         run_at TEXT DEFAULT (datetime('now'))
       );
 
+      CREATE TABLE IF NOT EXISTS audit_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        timestamp TEXT DEFAULT (datetime('now')),
+        user_id TEXT,
+        user_name TEXT,
+        client_id TEXT,
+        module TEXT NOT NULL,
+        action TEXT NOT NULL,
+        status TEXT DEFAULT 'success',
+        detail TEXT,
+        execution_ms INTEGER,
+        metadata TEXT
+      );
+
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_ts ON audit_logs(timestamp DESC);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_user ON audit_logs(user_id);
+      CREATE INDEX IF NOT EXISTS idx_audit_logs_module ON audit_logs(module);
+
       -- Seed Phase 8 backup records
       INSERT OR IGNORE INTO backup_records (id, backup_type, file_path, file_size_mb, status, encrypted, notes, completed_at) VALUES
         ('bkp-1', 'full', '/backups/ca_copilot_full_2026-07-01.enc', 142.4, 'verified', 1, 'Scheduled weekly full backup', '2026-07-01T02:00:00'),
@@ -1283,5 +1301,64 @@ export class DatabaseManager {
   }): void {
     this.db.prepare(`INSERT INTO qa_test_results (id, suite, test_name, status, duration_ms, error_message) VALUES (?, ?, ?, ?, ?, ?)`
     ).run(r.id, r.suite, r.test_name, r.status, r.duration_ms ?? 0, r.error_message ?? '')
+  }
+
+  logAuditEvent(params: {
+    module: string
+    action: string
+    status?: string
+    detail?: string
+    userId?: string
+    userName?: string
+    clientId?: string
+    executionMs?: number
+    metadata?: Record<string, unknown>
+  }): void {
+    try {
+      const stmt = this.db.prepare(`
+        INSERT INTO audit_logs (user_id, user_name, client_id, module, action, status, detail, execution_ms, metadata)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `)
+      stmt.run(
+        params.userId ?? null,
+        params.userName ?? null,
+        params.clientId ?? null,
+        params.module,
+        params.action,
+        params.status ?? 'success',
+        params.detail ? params.detail.slice(0, 2000) : null,
+        params.executionMs ?? null,
+        params.metadata ? JSON.stringify(params.metadata) : null
+      )
+    } catch (err) {
+      console.warn('[Database] audit log write failed (non-fatal):', err)
+    }
+  }
+
+  getAuditLogs(params: {
+    limit?: number
+    offset?: number
+    module?: string
+    userId?: string
+    search?: string
+  } = {}): { total: number; logs: Record<string, unknown>[] } {
+    const { limit = 100, offset = 0, module, userId, search } = params
+    const clauses: string[] = []
+    const args: unknown[] = []
+    if (module) { clauses.push('module = ?'); args.push(module) }
+    if (userId) { clauses.push('user_id = ?'); args.push(userId) }
+    if (search) {
+      clauses.push('(action LIKE ? OR detail LIKE ? OR user_name LIKE ?)')
+      const like = `%${search}%`
+      args.push(like, like, like)
+    }
+    const where = clauses.length ? 'WHERE ' + clauses.join(' AND ') : ''
+    const logs = this.db.prepare(
+      `SELECT * FROM audit_logs ${where} ORDER BY timestamp DESC LIMIT ? OFFSET ?`
+    ).all(...args, limit, offset) as Record<string, unknown>[]
+    const total = (this.db.prepare(
+      `SELECT COUNT(*) as cnt FROM audit_logs ${where}`
+    ).get(...args) as { cnt: number }).cnt
+    return { total, logs }
   }
 }

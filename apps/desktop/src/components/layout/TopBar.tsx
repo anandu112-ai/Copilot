@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect } from 'react'
 import { useUIStore } from '../../stores/uiStore'
 import { useLocation } from 'react-router-dom'
 import { Search, Upload, Bell, Sun, Moon, Monitor, User, X } from 'lucide-react'
@@ -12,9 +12,22 @@ const PAGE_TITLES: Record<string, string> = {
   '/invoice-processing': 'Invoice Processing',
   '/gst-reconciliation': 'GST Reconciliation',
   '/bank-reconciliation': 'Bank Reconciliation',
+  '/ledger-reconciliation': 'Ledger Reconciliation',
   '/audit': 'AI Audit Assistant',
-  '/reports': 'Reports',
+  '/audit-intelligence': 'AI Risk Analysis',
+  '/reports': 'Financial Reports',
   '/settings': 'Settings',
+  '/ai-copilot': 'AI Chat',
+  '/ai-automation': 'AI Automation Hub',
+  '/enterprise': 'Enterprise Platform',
+  '/integrations': 'Integration Hub',
+  '/compliance': 'Tax & Compliance',
+  '/firm': 'Firm Control Panel',
+  '/vouching': 'Vouching Assistant',
+  '/pdf-to-excel': 'PDF to Excel',
+  '/chat-with-documents': 'Chat with Documents',
+  '/documents': 'Document Manager',
+  '/help': 'Help & Support',
 }
 
 export default function TopBar() {
@@ -26,6 +39,17 @@ export default function TopBar() {
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'CA Copilot'
+
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault()
+        setSearchOpen(true)
+      }
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [])
 
   const themeIcon = theme === 'dark' ? <Moon size={16} /> : theme === 'light' ? <Sun size={16} /> : <Monitor size={16} />
 

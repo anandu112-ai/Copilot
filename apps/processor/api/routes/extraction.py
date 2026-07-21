@@ -24,6 +24,7 @@ from models.schemas import (
 from processors.document_pipeline import DocumentPipeline
 from exporters.excel_exporter import ExcelExporter
 from processors.batch_processor import submit_batch_job, get_job_status
+from utils.file_integrity import verify_file_integrity, cleanup_temp_files, safe_delete
 
 router = APIRouter()
 
@@ -42,6 +43,12 @@ async def extract_document(request: ExtractionRequest) -> ExtractionResult:
     logger.info(f"Extract request: {request.file_path}")
     if not Path(request.file_path).exists():
         raise HTTPException(status_code=404, detail=f"File not found: {request.file_path}")
+
+    # File integrity check
+    integrity = verify_file_integrity(request.file_path)
+    if not integrity['valid']:
+        raise HTTPException(status_code=400, detail=f"File integrity check failed: {integrity['error']}")
+    logger.info(f"File integrity OK: {integrity['size_bytes']} bytes, sha256={integrity['sha256'][:16]}...")
 
     try:
         pipeline = DocumentPipeline(request)
@@ -101,11 +108,7 @@ async def extract_uploaded_file(
         return result
 
     finally:
-        # Clean up temp file
-        try:
-            tmp_path.unlink(missing_ok=True)
-        except Exception:
-            pass
+        safe_delete(str(tmp_path))
 
 
 # ── Excel Generation ─────────────────────────────────────────────────────────
