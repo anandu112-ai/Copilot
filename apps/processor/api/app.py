@@ -11,7 +11,7 @@ from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from loguru import logger
 
-from api.routes import extraction, excel, health, reconciliation, audit_intelligence, copilot, integrations, firm
+from api.routes import extraction, excel, health, reconciliation, audit_intelligence, copilot, integrations, firm, workspace
 
 
 # ── Rate Limiter ─────────────────────────────────────────────────────────────
@@ -149,5 +149,6 @@ def create_app() -> FastAPI:
     app.include_router(copilot.router)
     app.include_router(integrations.router)
     app.include_router(firm.router)
+    app.include_router(workspace.router)
 
     return app
