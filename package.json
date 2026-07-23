@@ -25,6 +25,7 @@
     "@electron/rebuild@4.2.0": true
   },
   "devDependencies": {
-    "@electron/rebuild": "^4.2.0"
+    "@electron/rebuild": "^4.2.0",
+    "electron": "^29.4.6"
   }
 }
