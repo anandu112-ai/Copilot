@@ -12,6 +12,82 @@ export interface ElectronAPI {
   getAppVersion: () => Promise<string>
   getAppPath: (name: string) => Promise<string>
 
+  // Authentication API
+  auth: {
+    register: (data: {
+      fullName: string
+      email: string
+      mobile?: string
+      firmName?: string
+      password: string
+      confirmPassword: string
+    }) => Promise<{
+      success: boolean
+      user?: AuthUser
+      sessionToken?: string
+      error?: string
+    }>
+
+    login: (data: {
+      email: string
+      password: string
+    }) => Promise<{
+      success: boolean
+      user?: AuthUser
+      sessionToken?: string
+      error?: string
+    }>
+
+    getCurrentUser: (sessionToken: string) => Promise<{
+      success: boolean
+      user?: AuthUser | null
+    }>
+
+    logout: (sessionToken: string) => Promise<{
+      success: boolean
+      error?: string
+    }>
+
+    logoutAll: (sessionToken: string) => Promise<{
+      success: boolean
+      error?: string
+    }>
+
+    updateProfile: (sessionToken: string, updates: {
+      fullName?: string
+      mobile?: string
+      firmName?: string
+    }) => Promise<{
+      success: boolean
+      user?: AuthUser
+      error?: string
+    }>
+
+    changePassword: (sessionToken: string, data: {
+      currentPassword: string
+      newPassword: string
+      confirmPassword: string
+    }) => Promise<{
+      success: boolean
+      error?: string
+    }>
+
+    deleteAccount: (sessionToken: string, password: string) => Promise<{
+      success: boolean
+      error?: string
+    }>
+
+    isFirstRun: () => Promise<{
+      success: boolean
+      isFirstRun: boolean
+    }>
+
+    getUserCount: () => Promise<{
+      success: boolean
+      count: number
+    }>
+  }
+
   db: {
     getSettings: () => Promise<Record<string, string>>
     setSetting: (key: string, value: string) => Promise<{ success: boolean }>
@@ -128,6 +204,20 @@ export interface ShellResult {
 }
 
 // ── Database Records ───────────────────────────────────────────────────────
+export interface AuthUser {
+  id: number
+  uuid: string
+  full_name: string
+  email: string
+  mobile: string | null
+  firm_name: string | null
+  created_at: string
+  updated_at: string
+  last_login: string | null
+  role: string
+  status: string
+}
+
 export interface ConversionHistoryRecord {
   id: string
   original_file_name: string

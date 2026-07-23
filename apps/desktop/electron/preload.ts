@@ -23,6 +23,40 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getAppVersion: () => ipcRenderer.invoke('app:get-version'),
   getAppPath: (name: string) => ipcRenderer.invoke('app:get-path', name),
 
+  // Authentication
+  auth: {
+    register: (data: {
+      fullName: string
+      email: string
+      mobile?: string
+      firmName?: string
+      password: string
+      confirmPassword: string
+    }) => ipcRenderer.invoke('auth:register', data),
+    login: (data: { email: string; password: string }) =>
+      ipcRenderer.invoke('auth:login', data),
+    getCurrentUser: (sessionToken: string) =>
+      ipcRenderer.invoke('auth:get-current-user', sessionToken),
+    logout: (sessionToken: string) =>
+      ipcRenderer.invoke('auth:logout', sessionToken),
+    logoutAll: (sessionToken: string) =>
+      ipcRenderer.invoke('auth:logout-all', sessionToken),
+    updateProfile: (sessionToken: string, updates: {
+      fullName?: string
+      mobile?: string
+      firmName?: string
+    }) => ipcRenderer.invoke('auth:update-profile', sessionToken, updates),
+    changePassword: (sessionToken: string, data: {
+      currentPassword: string
+      newPassword: string
+      confirmPassword: string
+    }) => ipcRenderer.invoke('auth:change-password', sessionToken, data),
+    deleteAccount: (sessionToken: string, password: string) =>
+      ipcRenderer.invoke('auth:delete-account', sessionToken, password),
+    isFirstRun: () => ipcRenderer.invoke('auth:is-first-run'),
+    getUserCount: () => ipcRenderer.invoke('auth:get-user-count'),
+  },
+
   // Database operations (proxied through main for security)
   db: {
     getSettings: () => ipcRenderer.invoke('db:get-settings'),

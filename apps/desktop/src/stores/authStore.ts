@@ -1,78 +1,86 @@
 import { create } from 'zustand'
-
-export interface AuthUser {
-  id: string
-  name: string
-  email: string
-  role: string
-  branch: string
-  is_admin: boolean
-  permissions: string[]
-}
+import type { AuthUser } from '../types'
 
 interface AuthState {
   user: AuthUser | null
-  token: string | null        // kept in memory only — never written to localStorage
+  sessionToken: string | null
   isAuthenticated: boolean
   isLoading: boolean
 
-  setAuth: (user: AuthUser, token: string) => void
+  setAuth: (user: AuthUser, sessionToken: string) => void
   logout: () => void
   setLoading: (v: boolean) => void
+  updateUser: (user: AuthUser) => void
 }
 
 // ── Session storage helpers ────────────────────────────────────────────────
-// sessionStorage is cleared when the browser/Electron window closes.
-// It is NOT accessible by other origins and is harder to steal than
-// localStorage, which any injected script can read synchronously.
-const SESSION_KEY = 'ca-copilot-session'
+// Using localStorage for cross-session persistence (survives app restarts)
+// This is appropriate for a local desktop app where security is managed by OS
+const SESSION_KEY = 'ca-copilot-auth-session'
 
-function saveSession(user: AuthUser, token: string) {
+function saveSession(user: AuthUser, sessionToken: string) {
   try {
-    sessionStorage.setItem(SESSION_KEY, JSON.stringify({ user, token }))
-  } catch {
-    // storage unavailable — memory-only fallback is still fine
+    localStorage.setItem(SESSION_KEY, JSON.stringify({ user, sessionToken }))
+  } catch (err) {
+    console.error('Failed to save session:', err)
   }
 }
 
 function clearSession() {
   try {
-    sessionStorage.removeItem(SESSION_KEY)
-    // Also clean up any legacy localStorage entry from previous builds
-    localStorage.removeItem('ca-copilot-auth')
+    localStorage.removeItem(SESSION_KEY)
+    // Clean up legacy session storage entries
+    sessionStorage.removeItem('ca-copilot-session')
   } catch {}
 }
 
-function loadSession(): { user: AuthUser; token: string } | null {
+function loadSession(): { user: AuthUser; sessionToken: string } | null {
   try {
-    const raw = sessionStorage.getItem(SESSION_KEY)
+    const raw = localStorage.getItem(SESSION_KEY)
     if (!raw) return null
     const parsed = JSON.parse(raw)
-    if (parsed?.user && parsed?.token) return parsed
+    if (parsed?.user && parsed?.sessionToken) return parsed
     return null
   } catch {
     return null
   }
 }
 
-// ── Rehydrate from sessionStorage on module load ───────────────────────────
+// ── Rehydrate from localStorage on module load ─────────────────────────────
 const _stored = loadSession()
 
 export const useAuthStore = create<AuthState>()((set) => ({
   user: _stored?.user ?? null,
-  token: _stored?.token ?? null,
-  isAuthenticated: !!_stored?.token,
+  sessionToken: _stored?.sessionToken ?? null,
+  isAuthenticated: !!_stored?.sessionToken,
   isLoading: false,
 
-  setAuth: (user, token) => {
-    saveSession(user, token)
-    set({ user, token, isAuthenticated: true, isLoading: false })
+  setAuth: (user, sessionToken) => {
+    saveSession(user, sessionToken)
+    set({ user, sessionToken, isAuthenticated: true, isLoading: false })
   },
 
-  logout: () => {
+  logout: async () => {
+    const state = useAuthStore.getState()
+    // Call IPC logout to invalidate session on backend
+    if (state.sessionToken && window.electronAPI?.auth) {
+      try {
+        await window.electronAPI.auth.logout(state.sessionToken)
+      } catch (err) {
+        console.error('Logout IPC error:', err)
+      }
+    }
     clearSession()
-    set({ user: null, token: null, isAuthenticated: false })
+    set({ user: null, sessionToken: null, isAuthenticated: false })
   },
 
   setLoading: (v) => set({ isLoading: v }),
+
+  updateUser: (user) => {
+    const state = useAuthStore.getState()
+    if (state.sessionToken) {
+      saveSession(user, state.sessionToken)
+    }
+    set({ user })
+  },
 }))

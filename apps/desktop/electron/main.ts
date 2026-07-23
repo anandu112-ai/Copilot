@@ -3,12 +3,17 @@ import path from 'path'
 import { PythonProcessManager } from './pythonManager'
 import { registerIpcHandlers } from './ipcHandlers'
 import { DatabaseManager } from './database'
+import { AuthDatabaseManager } from './auth/authDatabase'
+import { AuthService } from './auth/authService'
+import { registerAuthIpcHandlers } from './auth/authIPC'
 
 const isDev = process.env.NODE_ENV === 'development'
 
 let mainWindow: BrowserWindow | null = null
 let pythonManager: PythonProcessManager | null = null
 let dbManager: DatabaseManager | null = null
+let authDbManager: AuthDatabaseManager | null = null
+let authService: AuthService | null = null
 
 function getPreloadPath(): string {
   return isDev
@@ -72,12 +77,25 @@ async function initializeApp() {
   dbManager = new DatabaseManager()
   await dbManager.initialize()
 
+  // Initialize authentication database
+  authDbManager = new AuthDatabaseManager()
+  await authDbManager.initialize()
+
+  // Initialize authentication service
+  authService = new AuthService(authDbManager)
+
+  // Clean up expired sessions on startup
+  authService.cleanupExpiredSessions()
+
   // Start Python service
   pythonManager = new PythonProcessManager()
   await pythonManager.start()
 
   // Register all IPC handlers
   registerIpcHandlers(ipcMain, pythonManager, dbManager)
+
+  // Register authentication IPC handlers
+  registerAuthIpcHandlers(ipcMain, authService)
 
   // Create the window
   await createWindow()

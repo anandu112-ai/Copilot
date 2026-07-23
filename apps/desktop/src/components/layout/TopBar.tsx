@@ -1,8 +1,9 @@
 import { useState } from 'react'
 import { useUIStore } from '../../stores/uiStore'
 import { useLocation } from 'react-router-dom'
-import { Search, Upload, Bell, Sun, Moon, Monitor, User, Terminal } from 'lucide-react'
+import { Search, Upload, Bell, Sun, Moon, Monitor, Terminal } from 'lucide-react'
 import { useSettingsStore } from '../../stores/settingsStore'
+import { useAuthStore } from '../../stores/authStore'
 import { cn } from '../../utils/cn'
 import { SessionRestoreIndicator } from '../common/SessionRestoreIndicator'
 
@@ -35,6 +36,7 @@ export default function TopBar() {
   const location = useLocation()
   const { theme, setTheme } = useSettingsStore()
   const { notificationCount, setGlobalSearchOpen } = useUIStore()
+  const { user } = useAuthStore()
   const [themeMenuOpen, setThemeMenuOpen] = useState(false)
 
   const pageTitle = PAGE_TITLES[location.pathname] || 'CA Copilot'
@@ -144,9 +146,14 @@ export default function TopBar() {
           </button>
 
           {/* User avatar */}
-          <button className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-800 transition-colors">
+          <button
+            className="flex items-center gap-2 p-1.5 rounded-lg hover:bg-surface-800 transition-colors"
+            title={user?.full_name ?? 'User'}
+          >
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center">
-              <User size={14} className="text-white" />
+              <span className="text-white text-xs font-black">
+                {user?.full_name?.[0]?.toUpperCase() ?? 'U'}
+              </span>
             </div>
           </button>
         </div>

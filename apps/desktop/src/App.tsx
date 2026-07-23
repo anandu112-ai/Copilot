@@ -14,6 +14,7 @@ import { processorApi } from './services/processorApi'
 
 // Auth
 import LoginPage from './pages/LoginPage'
+import RegisterPage from './pages/RegisterPage'
 
 // Pages
 import DashboardPage from './pages/DashboardPage'
@@ -139,9 +140,10 @@ function AppInner() {
 // ── Root App component ────────────────────────────────────────────────────────
 export default function App() {
   const { loadSettings, theme } = useSettingsStore()
-  const { isAuthenticated, token, logout } = useAuthStore()
+  const { isAuthenticated, sessionToken, logout, setAuth, setLoading } = useAuthStore()
 
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'failed'>('checking')
+  const [authChecked, setAuthChecked] = useState(false)
 
   useEffect(() => {
     loadSettings()
@@ -167,13 +169,35 @@ export default function App() {
     return () => mq.removeEventListener('change', listener)
   }, [theme])
 
-  // Verify persisted token on boot
+  // Verify session token on boot via IPC
   useEffect(() => {
-    if (token && isAuthenticated) {
-      processorApi.getMe().catch(() => logout())
+    async function verifySession() {
+      if (!sessionToken) {
+        setAuthChecked(true)
+        return
+      }
+
+      setLoading(true)
+      try {
+        const result = await window.electronAPI.auth.getCurrentUser(sessionToken)
+        if (result.success && result.user) {
+          // Session is valid, update user data
+          setAuth(result.user, sessionToken)
+        } else {
+          // Session expired or invalid, logout
+          logout()
+        }
+      } catch (err) {
+        console.error('Session verification failed:', err)
+        logout()
+      } finally {
+        setLoading(false)
+        setAuthChecked(true)
+      }
     }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [])
+
+    verifySession()
+  }, []) // Run once on mount
 
   // Python service health-check with retry
   useEffect(() => {
@@ -198,7 +222,26 @@ export default function App() {
     return () => { cancelled = true }
   }, [])
 
-  if (!isAuthenticated) return <LoginPage />
+  // Show loading while checking auth
+  if (!authChecked) {
+    return (
+      <div className="min-h-screen bg-surface-950 flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-12 h-12 border-4 border-brand-500 border-t-transparent rounded-full animate-spin mx-auto mb-4" />
+          <p className="text-surface-400 text-sm">Loading CA Copilot...</p>
+        </div>
+      </div>
+    )
+  }
+
+  if (!isAuthenticated) {
+    return (
+      <Routes>
+        <Route path="/register" element={<RegisterPage />} />
+        <Route path="*" element={<LoginPage />} />
+      </Routes>
+    )
+  }
 
   return <AppInner />
 }

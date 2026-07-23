@@ -288,10 +288,10 @@ export default function Sidebar() {
         {!sidebarCollapsed ? (
           <div className="flex items-center gap-2 px-2 py-1.5 rounded-lg">
             <div className="w-7 h-7 rounded-full bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center flex-shrink-0 text-xs font-black text-white">
-              {user?.name?.[0]?.toUpperCase() ?? 'U'}
+              {user?.full_name?.[0]?.toUpperCase() ?? 'U'}
             </div>
             <div className="min-w-0 flex-1">
-              <div className="text-xs font-semibold text-surface-200 truncate">{user?.name ?? 'User'}</div>
+              <div className="text-xs font-semibold text-surface-200 truncate">{user?.full_name ?? 'User'}</div>
               <div className="text-[10px] text-surface-500 truncate">{user?.role ?? 'Staff'}</div>
             </div>
             <button
