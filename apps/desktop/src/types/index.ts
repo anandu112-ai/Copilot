@@ -108,6 +108,10 @@ export interface ElectronAPI {
     getRolePermissions: () => Promise<any[]>
     insertRolePermission: (role: string, permission: string, enabled: number) => Promise<{ success: boolean }>
     clearRolePermissions: (role: string) => Promise<{ success: boolean }>
+    getTeams: () => Promise<TeamRecord[]>
+    getTeamMembers: (teamId: string) => Promise<TeamMember[]>
+    saveTeam: (team: TeamInput) => Promise<{ success: boolean }>
+    deleteTeam: (id: string) => Promise<{ success: boolean }>
     getTasks: () => Promise<any[]>
     insertTask: (task: any) => Promise<{ success: boolean }>
     updateTaskStatus: (id: string, status: string) => Promise<{ success: boolean }>
@@ -168,6 +172,14 @@ export interface ElectronAPI {
     insertUpdateRecord: (upd: any) => Promise<{ success: boolean }>
     getQaTestResults: () => Promise<any[]>
     insertQaTestResult: (r: any) => Promise<{ success: boolean }>
+
+    // Sync helpers
+    getPendingSyncQueue: () => Promise<any[]>
+    getRecordData: (tableName: string, localId: string) => Promise<any>
+    updateRecordSyncStatus: (tableName: string, localId: string, cloudId: string, syncStatus: string, versionNumber: number, lastSyncedAt: string) => Promise<{ success: boolean }>
+    updateSyncQueueError: (queueId: number, lastError: string) => Promise<{ success: boolean }>
+    deleteSyncQueueEntry: (queueId: number) => Promise<{ success: boolean }>
+    applySyncUpdate: (tableName: string, record: any) => Promise<{ success: boolean }>
   }
 
 
@@ -273,6 +285,27 @@ export interface ClientRecord {
   status?: string
   createdAt?: string
   updatedAt?: string
+}
+
+export type AppRole = 'Super Admin' | 'Partner' | 'Manager' | 'Senior Auditor' | 'CA' | 'Article Assistant' | 'Data Entry Operator' | 'Viewer'
+
+export type Permission =
+  | 'clients:create' | 'clients:delete' | 'documents:upload' | 'reports:view'
+  | 'reports:export' | 'ai:run' | 'audit:approve' | 'employees:manage' | 'billing:manage'
+  | 'roles:manage' | 'teams:manage'
+
+export interface RolePermissionRecord { role: AppRole; permission: Permission; enabled: number }
+
+export interface TeamRecord {
+  id: string; name: string; description: string; leader_id: string; permissions: string
+  status: 'active' | 'archived'; member_count: number; client_count: number
+}
+
+export interface TeamMember { id: string; name: string; email: string; role: AppRole; status: string }
+
+export interface TeamInput {
+  id: string; name: string; description?: string; leader_id?: string; permissions?: string
+  status?: 'active' | 'archived'; member_ids?: string[]; client_ids?: string[]
 }
 
 

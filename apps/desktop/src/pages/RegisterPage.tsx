@@ -19,7 +19,7 @@ export default function RegisterPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { setAuth } = useAuthStore()
+  const { register } = useAuthStore()
   const navigate = useNavigate()
 
   // Real-time password strength indicator
@@ -99,7 +99,7 @@ export default function RegisterPage() {
     setLoading(true)
 
     try {
-      const result = await window.electronAPI.auth.register({
+      const result = await register({
         fullName: fullName?.trim() || '',
         email: email?.trim() || '',
         mobile: mobile?.trim() || undefined,
@@ -115,18 +115,7 @@ export default function RegisterPage() {
         return
       }
 
-      if (!result.user || !result.sessionToken) {
-        setError('Registration failed. Invalid response from server.')
-        toast.error('Registration failed')
-        setLoading(false)
-        return
-      }
-
-      // Set auth state
-      setAuth(result.user, result.sessionToken)
-      
-      const userName = result.user?.full_name || result.user?.email || 'User'
-      toast.success(`Welcome, ${userName}! Your account has been created.`, { icon: '🎉' })
+      toast.success('Your account has been created.', { icon: '🎉' })
       
       // Navigate to dashboard
       navigate('/dashboard')

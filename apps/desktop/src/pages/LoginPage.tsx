@@ -14,7 +14,7 @@ export default function LoginPage() {
   const [error, setError] = useState('')
   const [loading, setLoading] = useState(false)
 
-  const { setAuth } = useAuthStore()
+  const { login } = useAuthStore()
   const navigate = useNavigate()
 
   const handleLogin = async (e: React.FormEvent) => {
@@ -42,7 +42,7 @@ export default function LoginPage() {
     setLoading(true)
     
     try {
-      const result = await window.electronAPI.auth.login({
+      const result = await login({
         email: emailTrimmed,
         password: passwordTrimmed,
       })
@@ -54,18 +54,7 @@ export default function LoginPage() {
         return
       }
 
-      if (!result.user || !result.sessionToken) {
-        setError('Login failed. Invalid response from server.')
-        toast.error('Login failed')
-        setLoading(false)
-        return
-      }
-
-      // Set auth state
-      setAuth(result.user, result.sessionToken)
-      
-      const userName = result.user?.full_name || result.user?.email || 'User'
-      toast.success(`Welcome back, ${userName}!`, { icon: '👋' })
+      toast.success('Welcome back!', { icon: '👋' })
       
       // Navigate to dashboard
       navigate('/dashboard')

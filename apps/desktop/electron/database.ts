@@ -114,6 +114,33 @@ export class DatabaseManager {
         PRIMARY KEY (role, permission)
       );
 
+      -- Phase 3: teams are local-first and can be synchronized by the existing queue.
+      CREATE TABLE IF NOT EXISTS teams (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        description TEXT,
+        leader_id TEXT,
+        permissions TEXT DEFAULT '[]',
+        status TEXT DEFAULT 'active',
+        created_at TEXT DEFAULT (datetime('now')),
+        updated_at TEXT DEFAULT (datetime('now'))
+      );
+
+      CREATE TABLE IF NOT EXISTS team_members (
+        team_id TEXT NOT NULL,
+        user_id TEXT NOT NULL,
+        PRIMARY KEY (team_id, user_id),
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE,
+        FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+      );
+
+      CREATE TABLE IF NOT EXISTS team_client_assignments (
+        team_id TEXT NOT NULL,
+        client_id TEXT NOT NULL,
+        PRIMARY KEY (team_id, client_id),
+        FOREIGN KEY (team_id) REFERENCES teams(id) ON DELETE CASCADE
+      );
+
       -- Module 4: Tasks Table
       CREATE TABLE IF NOT EXISTS tasks (
         id TEXT PRIMARY KEY,
@@ -514,7 +541,43 @@ export class DatabaseManager {
       INSERT OR IGNORE INTO update_history (id, from_version, to_version, channel, status, release_notes) VALUES
         ('upd-1', '0.9.0', '1.0.0', 'stable', 'installed', 'Initial stable release with Phase 1-6 modules.'),
         ('upd-2', '1.0.0', '1.1.0', 'stable', 'installed', 'Phase 7 AI Automation: Task planner, rules engine, working papers, QA flags.');
+
+      -- Phase 2 Sync Queue
+      CREATE TABLE IF NOT EXISTS local_sync_queue (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        table_name TEXT NOT NULL,
+        record_local_id TEXT NOT NULL,
+        action TEXT CHECK(action IN ('insert', 'update', 'delete')) NOT NULL,
+        created_at TEXT DEFAULT (datetime('now')),
+        retry_count INTEGER DEFAULT 0,
+        last_error TEXT
+      );
     `)
+
+    // Add sync properties to syncable tables dynamically
+    const tablesToSync = ['clients', 'documents', 'tasks', 'users']
+    const columnsToAdd = [
+      { name: 'cloud_id', def: 'TEXT' },
+      { name: 'sync_status', def: "TEXT DEFAULT 'synced'" },
+      { name: 'deleted_at', def: 'TEXT' },
+      { name: 'version_number', def: 'INTEGER DEFAULT 1' },
+      { name: 'last_synced_at', def: 'TEXT' }
+    ]
+
+    for (const table of tablesToSync) {
+      try {
+        const pragma = this.db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]
+        const existingCols = pragma.map(c => c.name)
+        
+        for (const col of columnsToAdd) {
+          if (!existingCols.includes(col.name)) {
+            this.db.prepare(`ALTER TABLE ${table} ADD COLUMN ${col.name} ${col.def}`).run()
+          }
+        }
+      } catch (err) {
+        console.error(`Failed to migrate table columns for ${table}:`, err)
+      }
+    }
   }
 
   // Settings
@@ -532,6 +595,84 @@ export class DatabaseManager {
   getAllSettings(): Record<string, string> {
     const rows = this.db.prepare('SELECT key, value FROM app_settings').all() as { key: string; value: string }[]
     return Object.fromEntries(rows.map(r => [r.key, r.value]))
+  }
+
+  // ── Synchronization Engine SQLite Helpers ──────────────────────────────────
+  addToSyncQueue(tableName: string, recordLocalId: string, action: 'insert' | 'update' | 'delete'): void {
+    try {
+      this.db.prepare('DELETE FROM local_sync_queue WHERE table_name = ? AND record_local_id = ? AND action = ?').run(tableName, recordLocalId, action)
+      this.db.prepare('INSERT INTO local_sync_queue (table_name, record_local_id, action) VALUES (?, ?, ?)')
+        .run(tableName, recordLocalId, action)
+    } catch (err) {
+      console.error('Failed to add to local_sync_queue:', err)
+    }
+  }
+
+  getPendingSyncQueue(): unknown[] {
+    try {
+      return this.db.prepare('SELECT * FROM local_sync_queue ORDER BY id ASC').all()
+    } catch {
+      return []
+    }
+  }
+
+  getRecordData(tableName: string, localId: string): unknown {
+    try {
+      return this.db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(localId)
+    } catch {
+      return null
+    }
+  }
+
+  updateRecordSyncStatus(
+    tableName: string,
+    localId: string,
+    cloudId: string,
+    syncStatus: string,
+    versionNumber: number,
+    lastSyncedAt: string
+  ): void {
+    try {
+      this.db.prepare(`
+        UPDATE ${tableName} 
+        SET cloud_id = ?, sync_status = ?, version_number = ?, last_synced_at = ? 
+        WHERE id = ?
+      `).run(cloudId, syncStatus, versionNumber, lastSyncedAt, localId)
+    } catch (err) {
+      console.error(`Failed to update sync status for ${tableName} (${localId}):`, err)
+    }
+  }
+
+  updateSyncQueueError(queueId: number, lastError: string): void {
+    try {
+      this.db.prepare('UPDATE local_sync_queue SET retry_count = retry_count + 1, last_error = ? WHERE id = ?')
+        .run(lastError, queueId)
+    } catch (err) {
+      console.error('Failed to update sync queue error:', err)
+    }
+  }
+
+  deleteSyncQueueEntry(queueId: number): void {
+    try {
+      this.db.prepare('DELETE FROM local_sync_queue WHERE id = ?').run(queueId)
+    } catch (err) {
+      console.error('Failed to delete sync queue entry:', err)
+    }
+  }
+
+  applySyncUpdate(tableName: string, record: any): void {
+    try {
+      const fields = Object.keys(record)
+      const placeholders = fields.map(() => '?').join(', ')
+      const values = Object.values(record)
+      
+      this.db.prepare(`
+        INSERT OR REPLACE INTO ${tableName} (${fields.join(', ')})
+        VALUES (${placeholders})
+      `).run(...values)
+    } catch (err) {
+      console.error(`Failed to apply sync update to SQLite table ${tableName}:`, err)
+    }
   }
 
   // Conversion History
@@ -622,6 +763,7 @@ export class DatabaseManager {
         created_at as createdAt, 
         updated_at as updatedAt 
       FROM clients 
+      WHERE deleted_at IS NULL
       ORDER BY created_at DESC
     `).all()
   }
@@ -642,8 +784,8 @@ export class DatabaseManager {
   }): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO clients
-        (id, client_name, business_name, client_type, pan, gstin, email, phone, financial_year, assigned_staff, status, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        (id, client_name, business_name, client_type, pan, gstin, email, phone, financial_year, assigned_staff, status, sync_status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_upload', datetime('now'))
     `).run(
       client.id,
       client.clientName,
@@ -657,10 +799,12 @@ export class DatabaseManager {
       client.assignedStaff || '',
       client.status || 'active'
     )
+    this.addToSyncQueue('clients', client.id, 'update')
   }
 
   deleteClient(id: string): void {
-    this.db.prepare('DELETE FROM clients WHERE id = ?').run(id)
+    this.db.prepare("UPDATE clients SET deleted_at = datetime('now'), sync_status = 'pending_upload' WHERE id = ?").run(id)
+    this.addToSyncQueue('clients', id, 'delete')
   }
 
   // Firm Details
@@ -747,9 +891,50 @@ export class DatabaseManager {
     this.db.prepare('DELETE FROM roles_permissions WHERE role = ?').run(role)
   }
 
+  // Teams
+  getTeams(): unknown[] {
+    return this.db.prepare(`
+      SELECT teams.*, COUNT(DISTINCT team_members.user_id) AS member_count,
+        COUNT(DISTINCT team_client_assignments.client_id) AS client_count
+      FROM teams
+      LEFT JOIN team_members ON team_members.team_id = teams.id
+      LEFT JOIN team_client_assignments ON team_client_assignments.team_id = teams.id
+      GROUP BY teams.id
+      ORDER BY teams.name ASC
+    `).all()
+  }
+
+  getTeamMembers(teamId: string): unknown[] {
+    return this.db.prepare(`
+      SELECT users.* FROM users
+      INNER JOIN team_members ON team_members.user_id = users.id
+      WHERE team_members.team_id = ? ORDER BY users.name ASC
+    `).all(teamId)
+  }
+
+  saveTeam(team: { id: string; name: string; description?: string; leader_id?: string; permissions?: string; status?: string; member_ids?: string[]; client_ids?: string[] }): void {
+    const save = this.db.transaction(() => {
+      this.db.prepare(`
+        INSERT OR REPLACE INTO teams (id, name, description, leader_id, permissions, status, updated_at)
+        VALUES (?, ?, ?, ?, ?, ?, datetime('now'))
+      `).run(team.id, team.name, team.description || '', team.leader_id || '', team.permissions || '[]', team.status || 'active')
+      this.db.prepare('DELETE FROM team_members WHERE team_id = ?').run(team.id)
+      this.db.prepare('DELETE FROM team_client_assignments WHERE team_id = ?').run(team.id)
+      const addMember = this.db.prepare('INSERT OR IGNORE INTO team_members (team_id, user_id) VALUES (?, ?)')
+      const addClient = this.db.prepare('INSERT OR IGNORE INTO team_client_assignments (team_id, client_id) VALUES (?, ?)')
+      team.member_ids?.forEach((userId) => addMember.run(team.id, userId))
+      team.client_ids?.forEach((clientId) => addClient.run(team.id, clientId))
+    })
+    save()
+  }
+
+  deleteTeam(id: string): void {
+    this.db.prepare('DELETE FROM teams WHERE id = ?').run(id)
+  }
+
   // Tasks
   getTasks(): unknown[] {
-    return this.db.prepare('SELECT * FROM tasks ORDER BY due_date ASC, created_at DESC').all()
+    return this.db.prepare('SELECT * FROM tasks WHERE deleted_at IS NULL ORDER BY due_date ASC, created_at DESC').all()
   }
 
   insertTask(task: {
@@ -767,8 +952,8 @@ export class DatabaseManager {
   }): void {
     this.db.prepare(`
       INSERT OR REPLACE INTO tasks
-        (id, client_id, owner_id, owner_name, due_date, priority, status, title, description, task_type, attachments, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+        (id, client_id, owner_id, owner_name, due_date, priority, status, title, description, task_type, attachments, sync_status, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'pending_upload', datetime('now'))
     `).run(
       task.id,
       task.client_id || '',
@@ -782,16 +967,19 @@ export class DatabaseManager {
       task.task_type || 'other',
       task.attachments || '[]'
     )
+    this.addToSyncQueue('tasks', task.id, 'update')
   }
 
   updateTaskStatus(id: string, status: string): void {
     this.db.prepare(`
-      UPDATE tasks SET status = ?, updated_at = datetime('now') WHERE id = ?
+      UPDATE tasks SET status = ?, sync_status = 'pending_upload', updated_at = datetime('now') WHERE id = ?
     `).run(status, id)
+    this.addToSyncQueue('tasks', id, 'update')
   }
 
   deleteTask(id: string): void {
-    this.db.prepare('DELETE FROM tasks WHERE id = ?').run(id)
+    this.db.prepare("UPDATE tasks SET deleted_at = datetime('now'), sync_status = 'pending_upload' WHERE id = ?").run(id)
+    this.addToSyncQueue('tasks', id, 'delete')
   }
 
   // Task Comments

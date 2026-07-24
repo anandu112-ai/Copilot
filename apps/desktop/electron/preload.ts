@@ -94,6 +94,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:insert-role-permission', role, permission, enabled),
     clearRolePermissions: (role: string) => ipcRenderer.invoke('db:clear-role-permissions', role),
 
+    // Teams
+    getTeams: () => ipcRenderer.invoke('db:get-teams'),
+    getTeamMembers: (teamId: string) => ipcRenderer.invoke('db:get-team-members', teamId),
+    saveTeam: (team: any) => ipcRenderer.invoke('db:save-team', team),
+    deleteTeam: (id: string) => ipcRenderer.invoke('db:delete-team', id),
+
     // Tasks
     getTasks: () => ipcRenderer.invoke('db:get-tasks'),
     insertTask: (task: any) => ipcRenderer.invoke('db:insert-task', task),
@@ -198,6 +204,15 @@ contextBridge.exposeInMainWorld('electronAPI', {
       ipcRenderer.invoke('db:get-audit-logs', params ?? {}),
     logAuditEvent: (params: Record<string, unknown>) =>
       ipcRenderer.invoke('db:log-audit-event', params),
+
+    // Sync helpers
+    getPendingSyncQueue: () => ipcRenderer.invoke('db:get-pending-sync-queue'),
+    getRecordData: (tableName: string, localId: string) => ipcRenderer.invoke('db:get-record-data', tableName, localId),
+    updateRecordSyncStatus: (tableName: string, localId: string, cloudId: string, syncStatus: string, versionNumber: number, lastSyncedAt: string) =>
+      ipcRenderer.invoke('db:update-record-sync-status', tableName, localId, cloudId, syncStatus, versionNumber, lastSyncedAt),
+    updateSyncQueueError: (queueId: number, lastError: string) => ipcRenderer.invoke('db:update-sync-queue-error', queueId, lastError),
+    deleteSyncQueueEntry: (queueId: number) => ipcRenderer.invoke('db:delete-sync-queue-entry', queueId),
+    applySyncUpdate: (tableName: string, record: any) => ipcRenderer.invoke('db:apply-sync-update', tableName, record),
   },
 
   // Backup & Restore

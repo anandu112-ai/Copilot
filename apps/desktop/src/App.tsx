@@ -11,6 +11,7 @@ import { useWorkspaceStore } from './stores/workspaceStore'
 import { useWorkspaceMemory } from './hooks/useWorkspaceMemory'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { processorApi } from './services/processorApi'
+import { syncService } from './services/sync/syncService'
 
 // Auth
 import LoginPage from './pages/LoginPage'
@@ -30,6 +31,7 @@ import ReportsPage from './pages/ReportsPage'
 import SettingsPage from './pages/SettingsPage'
 import AiCopilotPage from './pages/AiCopilotPage'
 import FirmManagementPage from './pages/FirmManagementPage'
+import TeamsPage from './pages/TeamsPage'
 import AiAutomationPage from './pages/AiAutomationPage'
 import EnterprisePage from './pages/EnterprisePage'
 import IntegrationsPage from './pages/IntegrationsPage'
@@ -61,6 +63,7 @@ const PAGE_TITLES: Record<string, string> = {
   '/integrations': 'Integration Hub',
   '/compliance': 'Tax & Compliance',
   '/firm': 'Firm Control Panel',
+  '/teams': 'Team Management',
   '/vouching': 'Vouching Assistant',
   '/pdf-to-excel': 'PDF to Excel',
   '/chat-with-documents': 'Chat with Documents',
@@ -125,6 +128,7 @@ function AppInner() {
           <Route path="integrations" element={<IntegrationsPage />} />
           <Route path="compliance" element={<CompliancePage />} />
           <Route path="firm" element={<FirmManagementPage />} />
+          <Route path="teams" element={<TeamsPage />} />
           <Route path="vouching" element={<VouchingPage />} />
           {/* Support paths */}
           <Route path="pdf-to-excel" element={<PdfToExcelPage />} />
@@ -168,6 +172,18 @@ export default function App() {
     mq.addEventListener('change', listener)
     return () => mq.removeEventListener('change', listener)
   }, [theme])
+
+  // Initialize and tear down background synchronization service loop
+  useEffect(() => {
+    if (isAuthenticated) {
+      syncService.start(15) // sync every 15 minutes
+    } else {
+      syncService.stop()
+    }
+    return () => {
+      syncService.stop()
+    }
+  }, [isAuthenticated])
 
   // Verify session token on boot via IPC
   useEffect(() => {

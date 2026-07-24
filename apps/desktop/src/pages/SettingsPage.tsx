@@ -1,19 +1,38 @@
 import { useState } from 'react'
-import { Settings, Sun, Moon, Monitor, Folder, Info, Database, RefreshCcw } from 'lucide-react'
+import { Settings, Sun, Moon, Monitor, Folder, Info, Database, RefreshCcw, Cloud, Wifi, Check, AlertCircle, Loader2, Lock, Eye, EyeOff } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { cn } from '../utils/cn'
+import { testSupabaseConnection } from '../services/supabase/supabaseClient'
 import toast from 'react-hot-toast'
 
 type ThemeValue = 'dark' | 'light' | 'system'
 
 export default function SettingsPage() {
-  const { theme, setTheme, defaultExportFolder, ocrEnabled, setSetting } = useSettingsStore()
+  const { 
+    theme, 
+    setTheme, 
+    defaultExportFolder, 
+    ocrEnabled, 
+    setSetting,
+    supabaseUrl,
+    supabaseAnonKey,
+    syncInterval,
+    offlineCacheSize,
+    backupFrequency,
+    syncEnabled
+  } = useSettingsStore()
+  
   const [activeSection, setActiveSection] = useState('appearance')
+  const [testingConnection, setTestingConnection] = useState(false)
+  const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'failed'>('idle')
+  const [connectionError, setConnectionError] = useState('')
+  const [showAnonKey, setShowAnonKey] = useState(false)
 
   const sections = [
     { id: 'appearance', label: 'Appearance', icon: Sun },
     { id: 'processing', label: 'Processing', icon: RefreshCcw },
     { id: 'storage', label: 'Storage & Data', icon: Database },
+    { id: 'cloud', label: 'Cloud & Supabase', icon: Cloud },
     { id: 'about', label: 'About', icon: Info },
   ]
 
@@ -29,6 +48,34 @@ export default function SettingsPage() {
     if (!result.canceled && result.filePaths.length > 0) {
       await setSetting('defaultExportFolder', result.filePaths[0])
       toast.success('Default export folder updated')
+    }
+  }
+
+  const handleTestConnection = async () => {
+    if (!supabaseUrl || !supabaseAnonKey) {
+      toast.error('Please enter both Supabase URL and Anon Key')
+      return
+    }
+    setTestingConnection(true)
+    setConnectionStatus('idle')
+    setConnectionError('')
+    
+    try {
+      const result = await testSupabaseConnection(supabaseUrl, supabaseAnonKey)
+      if (result.success) {
+        setConnectionStatus('success')
+        toast.success('Successfully connected to Supabase!')
+      } else {
+        setConnectionStatus('failed')
+        setConnectionError(result.error || 'Failed to connect. Verify your credentials.')
+        toast.error('Connection failed')
+      }
+    } catch (err: any) {
+      setConnectionStatus('failed')
+      setConnectionError(err.message || 'An unexpected error occurred.')
+      toast.error('Connection failed')
+    } finally {
+      setTestingConnection(false)
     }
   }
 
@@ -151,11 +198,171 @@ export default function SettingsPage() {
                 </div>
                 <div className="flex justify-between py-2 border-b border-surface-800">
                   <span>Cloud sync</span>
-                  <span className="text-amber-400">Not enabled (MVP)</span>
+                  <span className={cn(syncEnabled ? "text-green-400" : "text-amber-400")}>
+                    {syncEnabled ? "Enabled (Hybrid Mode)" : "Not active (Local-only)"}
+                  </span>
                 </div>
                 <div className="flex justify-between py-2">
                   <span>Encryption</span>
-                  <span className="text-surface-300">None (local only)</span>
+                  <span className="text-surface-300">AES-256 for local passwords</span>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {activeSection === 'cloud' && (
+            <div className="space-y-4">
+              <div className="card p-5">
+                <div className="flex items-center justify-between mb-4">
+                  <div>
+                    <h3 className="text-sm font-semibold text-surface-200">Supabase Cloud Sync</h3>
+                    <p className="text-xs text-surface-500 mt-0.5">Enable dynamic data sync and hybrid authentication with Supabase</p>
+                  </div>
+                  <button
+                    onClick={() => setSetting('syncEnabled', syncEnabled ? 'false' : 'true')}
+                    className={cn(
+                      'w-10 h-6 rounded-full transition-colors relative',
+                      syncEnabled ? 'bg-brand-600' : 'bg-surface-700'
+                    )}
+                  >
+                    <span className={cn(
+                      'absolute top-1 w-4 h-4 rounded-full bg-white transition-transform',
+                      syncEnabled ? 'translate-x-5' : 'translate-x-1'
+                    )} />
+                  </button>
+                </div>
+
+                <div className="space-y-4 border-t border-surface-800 pt-4">
+                  {/* Supabase URL */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-surface-400 uppercase tracking-wider">
+                      Supabase Project URL
+                    </label>
+                    <input
+                      type="text"
+                      value={supabaseUrl}
+                      onChange={(e) => setSetting('supabaseUrl', e.target.value)}
+                      placeholder="https://your-project.supabase.co"
+                      className="input w-full text-xs"
+                    />
+                  </div>
+
+                  {/* Supabase Anon Key */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-surface-400 uppercase tracking-wider">
+                      Supabase Anon Key
+                    </label>
+                    <div className="relative">
+                      <input
+                        type={showAnonKey ? 'text' : 'password'}
+                        value={supabaseAnonKey}
+                        onChange={(e) => setSetting('supabaseAnonKey', e.target.value)}
+                        placeholder="your-supabase-anon-key"
+                        className="input w-full pr-10 text-xs"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAnonKey(v => !v)}
+                        className="absolute right-3 top-1/2 -translate-y-1/2 text-surface-500 hover:text-surface-300 transition-colors"
+                      >
+                        {showAnonKey ? <EyeOff size={13} /> : <Eye size={13} />}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Test Connection Button */}
+                  <div className="flex items-center gap-4 pt-2">
+                    <button
+                      type="button"
+                      onClick={handleTestConnection}
+                      disabled={testingConnection || !supabaseUrl || !supabaseAnonKey}
+                      className="btn-secondary gap-1.5 text-xs py-2 px-4"
+                    >
+                      {testingConnection ? (
+                        <>
+                          <Loader2 size={13} className="animate-spin" />
+                          Testing…
+                        </>
+                      ) : (
+                        <>
+                          <Wifi size={13} />
+                          Test Connection
+                        </>
+                      )}
+                    </button>
+
+                    {connectionStatus === 'success' && (
+                      <div className="flex items-center gap-1.5 text-xs text-green-400">
+                        <Check size={13} className="border border-green-400/30 rounded-full p-0.5" />
+                        Connected successfully
+                      </div>
+                    )}
+
+                    {connectionStatus === 'failed' && (
+                      <div className="flex items-center gap-1.5 text-xs text-red-400 max-w-[280px]">
+                        <AlertCircle size={13} className="flex-shrink-0" />
+                        <span className="truncate">{connectionError}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card p-5 space-y-4">
+                <h3 className="text-sm font-semibold text-surface-200">Sync Configurations</h3>
+
+                <div className="grid grid-cols-2 gap-4">
+                  {/* Sync Interval */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-surface-400 uppercase tracking-wider">
+                      Sync Interval
+                    </label>
+                    <select
+                      value={syncInterval}
+                      onChange={(e) => setSetting('syncInterval', e.target.value)}
+                      className="input w-full text-xs bg-surface-900 border-surface-700"
+                    >
+                      <option value="5">Every 5 minutes</option>
+                      <option value="15">Every 15 minutes</option>
+                      <option value="30">Every 30 minutes</option>
+                      <option value="60">Every 60 minutes</option>
+                    </select>
+                  </div>
+
+                  {/* Backup Frequency */}
+                  <div className="space-y-1.5">
+                    <label className="text-[11px] font-bold text-surface-400 uppercase tracking-wider">
+                      Cloud Backup Frequency
+                    </label>
+                    <select
+                      value={backupFrequency}
+                      onChange={(e) => setSetting('backupFrequency', e.target.value)}
+                      className="input w-full text-xs bg-surface-900 border-surface-700"
+                    >
+                      <option value="daily">Daily</option>
+                      <option value="weekly">Weekly</option>
+                      <option value="monthly">Monthly</option>
+                    </select>
+                  </div>
+                </div>
+
+                {/* Offline Cache Size */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-center text-xs">
+                    <label className="text-[11px] font-bold text-surface-400 uppercase tracking-wider">
+                      Offline Document Cache Limit
+                    </label>
+                    <span className="text-brand-400 font-semibold">{offlineCacheSize} MB</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="100"
+                    max="5000"
+                    step="100"
+                    value={offlineCacheSize}
+                    onChange={(e) => setSetting('offlineCacheSize', e.target.value)}
+                    className="w-full h-1.5 bg-surface-800 rounded-lg appearance-none cursor-pointer accent-brand-500"
+                  />
                 </div>
               </div>
             </div>

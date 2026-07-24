@@ -157,6 +157,18 @@ export function registerIpcHandlers(
     return { success: true }
   })
 
+  // Teams
+  ipcMain.handle('db:get-teams', () => dbManager.getTeams())
+  ipcMain.handle('db:get-team-members', (_, teamId: string) => dbManager.getTeamMembers(teamId))
+  ipcMain.handle('db:save-team', (_, team: any) => {
+    dbManager.saveTeam(team)
+    return { success: true }
+  })
+  ipcMain.handle('db:delete-team', (_, id: string) => {
+    dbManager.deleteTeam(id)
+    return { success: true }
+  })
+
   // ── Tasks ──
   ipcMain.handle('db:get-tasks', () => {
     return dbManager.getTasks()
@@ -358,6 +370,34 @@ export function registerIpcHandlers(
 
   ipcMain.handle('db:log-audit-event', (_, params: Record<string, unknown>) => {
     dbManager.logAuditEvent(params as Parameters<typeof dbManager.logAuditEvent>[0])
+    return { success: true }
+  })
+
+  // ── Sync Engine Helpers ───────────────────────────────────────────────────
+  ipcMain.handle('db:get-pending-sync-queue', () => dbManager.getPendingSyncQueue())
+  ipcMain.handle('db:get-record-data', (_, tableName: string, localId: string) => dbManager.getRecordData(tableName, localId))
+  ipcMain.handle('db:update-record-sync-status', (
+    _,
+    tableName: string,
+    localId: string,
+    cloudId: string,
+    syncStatus: string,
+    versionNumber: number,
+    lastSyncedAt: string
+  ) => {
+    dbManager.updateRecordSyncStatus(tableName, localId, cloudId, syncStatus, versionNumber, lastSyncedAt)
+    return { success: true }
+  })
+  ipcMain.handle('db:update-sync-queue-error', (_, queueId: number, lastError: string) => {
+    dbManager.updateSyncQueueError(queueId, lastError)
+    return { success: true }
+  })
+  ipcMain.handle('db:delete-sync-queue-entry', (_, queueId: number) => {
+    dbManager.deleteSyncQueueEntry(queueId)
+    return { success: true }
+  })
+  ipcMain.handle('db:apply-sync-update', (_, tableName: string, record: any) => {
+    dbManager.applySyncUpdate(tableName, record)
     return { success: true }
   })
 

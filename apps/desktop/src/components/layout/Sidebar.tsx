@@ -168,6 +168,13 @@ const navGroups: NavGroup[] = [
         icon: <Users size={16} />,
         isAvailable: true,
       },
+      {
+        id: 'teams',
+        label: 'Teams & Access',
+        path: '/teams',
+        icon: <Users size={16} />,
+        isAvailable: true,
+      },
     ],
   },
   {
