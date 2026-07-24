@@ -550,9 +550,62 @@ export class DatabaseManager {
         action TEXT CHECK(action IN ('insert', 'update', 'delete')) NOT NULL,
         created_at TEXT DEFAULT (datetime('now')),
         retry_count INTEGER DEFAULT 0,
+        status TEXT DEFAULT 'pending',
+        priority TEXT DEFAULT 'normal',
+        last_attempted_at TEXT,
+        next_attempt_at TEXT,
         last_error TEXT
       );
+
+      CREATE TABLE IF NOT EXISTS sync_conflicts (
+        id TEXT PRIMARY KEY,
+        table_name TEXT NOT NULL,
+        record_id TEXT NOT NULL,
+        local_payload TEXT,
+        remote_payload TEXT,
+        status TEXT DEFAULT 'open',
+        resolution TEXT,
+        created_at TEXT DEFAULT (datetime('now')),
+        resolved_at TEXT
+      );
     `)
+
+    const queueColumns = [
+      { name: 'status', def: "TEXT DEFAULT 'pending'" },
+      { name: 'priority', def: "TEXT DEFAULT 'normal'" },
+      { name: 'last_attempted_at', def: 'TEXT' },
+      { name: 'next_attempt_at', def: 'TEXT' },
+    ]
+
+    try {
+      const queueInfo = this.db.prepare('PRAGMA table_info(local_sync_queue)').all() as { name: string }[]
+      const existingQueueCols = queueInfo.map(col => col.name)
+      for (const col of queueColumns) {
+        if (!existingQueueCols.includes(col.name)) {
+          this.db.prepare(`ALTER TABLE local_sync_queue ADD COLUMN ${col.name} ${col.def}`).run()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to migrate local_sync_queue columns:', err)
+    }
+
+    try {
+      const conflictInfo = this.db.prepare('PRAGMA table_info(sync_conflicts)').all() as { name: string }[]
+      const existingConflictCols = conflictInfo.map(col => col.name)
+      const conflictColumns = [
+        { name: 'status', def: "TEXT DEFAULT 'open'" },
+        { name: 'resolution', def: 'TEXT' },
+        { name: 'created_at', def: "TEXT DEFAULT (datetime('now'))" },
+        { name: 'resolved_at', def: 'TEXT' },
+      ]
+      for (const col of conflictColumns) {
+        if (!existingConflictCols.includes(col.name)) {
+          this.db.prepare(`ALTER TABLE sync_conflicts ADD COLUMN ${col.name} ${col.def}`).run()
+        }
+      }
+    } catch (err) {
+      console.error('Failed to migrate sync_conflicts columns:', err)
+    }
 
     // Add sync properties to syncable tables dynamically
     const tablesToSync = ['clients', 'documents', 'tasks', 'users']
@@ -601,8 +654,9 @@ export class DatabaseManager {
   addToSyncQueue(tableName: string, recordLocalId: string, action: 'insert' | 'update' | 'delete'): void {
     try {
       this.db.prepare('DELETE FROM local_sync_queue WHERE table_name = ? AND record_local_id = ? AND action = ?').run(tableName, recordLocalId, action)
-      this.db.prepare('INSERT INTO local_sync_queue (table_name, record_local_id, action) VALUES (?, ?, ?)')
-        .run(tableName, recordLocalId, action)
+      this.db.prepare(
+        'INSERT INTO local_sync_queue (table_name, record_local_id, action, status, priority, last_attempted_at, next_attempt_at) VALUES (?, ?, ?, ?, ?, datetime(\'now\'), datetime(\'now\'))'
+      ).run(tableName, recordLocalId, action, 'pending', 'normal')
     } catch (err) {
       console.error('Failed to add to local_sync_queue:', err)
     }
@@ -610,14 +664,77 @@ export class DatabaseManager {
 
   getPendingSyncQueue(): unknown[] {
     try {
-      return this.db.prepare('SELECT * FROM local_sync_queue ORDER BY id ASC').all()
+      return this.db.prepare(`
+        SELECT * FROM local_sync_queue
+        WHERE status IN ('pending', 'retrying')
+          AND (next_attempt_at IS NULL OR next_attempt_at <= datetime('now'))
+        ORDER BY CASE priority WHEN 'critical' THEN 0 WHEN 'high' THEN 1 WHEN 'normal' THEN 2 ELSE 3 END,
+          next_attempt_at ASC, id ASC
+      `).all()
     } catch {
       return []
     }
   }
 
+  getSyncQueueSummary(): { pendingCount: number; failedCount: number; syncingCount: number; conflictCount: number } {
+    try {
+      const counts = this.db.prepare("SELECT status, COUNT(*) as count FROM local_sync_queue GROUP BY status").all() as Array<{ status: string; count: number }>
+      const summary = counts.reduce((acc, row) => {
+        if (row.status === 'pending') acc.pendingCount += row.count
+        if (row.status === 'failed') acc.failedCount += row.count
+        if (row.status === 'uploading' || row.status === 'downloading') acc.syncingCount += row.count
+        return acc
+      }, { pendingCount: 0, failedCount: 0, syncingCount: 0, conflictCount: 0 })
+
+      const conflictCount = (this.db.prepare("SELECT COUNT(*) as count FROM sync_conflicts WHERE status = 'open'").get() as { count: number }).count
+      return { ...summary, conflictCount }
+    } catch {
+      return { pendingCount: 0, failedCount: 0, syncingCount: 0, conflictCount: 0 }
+    }
+  }
+
+  getSyncConflicts(): unknown[] {
+    try {
+      return this.db.prepare('SELECT * FROM sync_conflicts ORDER BY created_at DESC').all()
+    } catch {
+      return []
+    }
+  }
+
+  insertSyncConflict(conflict: { id: string; tableName: string; recordId: string; localPayload: unknown; remotePayload: unknown }): void {
+    try {
+      this.db.prepare(`
+        INSERT OR IGNORE INTO sync_conflicts (id, table_name, record_id, local_payload, remote_payload, status)
+        VALUES (?, ?, ?, ?, ?, 'open')
+      `).run(conflict.id, conflict.tableName, conflict.recordId, JSON.stringify(conflict.localPayload), JSON.stringify(conflict.remotePayload))
+    } catch (err) {
+      console.error('Failed to insert sync conflict:', err)
+    }
+  }
+
+  resolveSyncConflict(id: string, resolution: string, status = 'resolved'): void {
+    try {
+      this.db.prepare('UPDATE sync_conflicts SET resolution = ?, status = ?, resolved_at = datetime(\'now\') WHERE id = ?').run(resolution, status, id)
+    } catch (err) {
+      console.error('Failed to resolve sync conflict:', err)
+    }
+  }
+
+  updateSyncQueueStatus(queueId: number, status: string, lastError?: string | null): void {
+    try {
+      this.db.prepare(`
+        UPDATE local_sync_queue SET status = ?, last_error = ?, last_attempted_at = datetime('now'),
+          next_attempt_at = CASE WHEN ? IN ('pending', 'retrying') THEN datetime('now') ELSE next_attempt_at END
+        WHERE id = ?
+      `).run(status, lastError || null, status, queueId)
+    } catch (err) {
+      console.error('Failed to update sync queue status:', err)
+    }
+  }
+
   getRecordData(tableName: string, localId: string): unknown {
     try {
+      if (!this.isSyncableTable(tableName)) return null
       return this.db.prepare(`SELECT * FROM ${tableName} WHERE id = ?`).get(localId)
     } catch {
       return null
@@ -633,6 +750,7 @@ export class DatabaseManager {
     lastSyncedAt: string
   ): void {
     try {
+      if (!this.isSyncableTable(tableName)) throw new Error(`Unsupported sync table: ${tableName}`)
       this.db.prepare(`
         UPDATE ${tableName} 
         SET cloud_id = ?, sync_status = ?, version_number = ?, last_synced_at = ? 
@@ -645,8 +763,17 @@ export class DatabaseManager {
 
   updateSyncQueueError(queueId: number, lastError: string): void {
     try {
-      this.db.prepare('UPDATE local_sync_queue SET retry_count = retry_count + 1, last_error = ? WHERE id = ?')
-        .run(lastError, queueId)
+      const item = this.db.prepare('SELECT retry_count FROM local_sync_queue WHERE id = ?').get(queueId) as { retry_count: number } | undefined
+      if (!item) return
+      const retries = item.retry_count + 1
+      const maxRetries = 8
+      // Capped exponential backoff (30s, 60s, 120s … up to 30m) plus jitter prevents retry storms.
+      const delaySeconds = Math.min(1800, 30 * Math.pow(2, Math.min(retries - 1, 6))) + Math.floor(Math.random() * 15)
+      this.db.prepare(`
+        UPDATE local_sync_queue SET retry_count = ?, status = ?, last_error = ?,
+          last_attempted_at = datetime('now'), next_attempt_at = datetime('now', ?)
+        WHERE id = ?
+      `).run(retries, retries >= maxRetries ? 'failed' : 'retrying', lastError, `+${delaySeconds} seconds`, queueId)
     } catch (err) {
       console.error('Failed to update sync queue error:', err)
     }
@@ -662,6 +789,7 @@ export class DatabaseManager {
 
   applySyncUpdate(tableName: string, record: any): void {
     try {
+      if (!this.isSyncableTable(tableName)) throw new Error(`Unsupported sync table: ${tableName}`)
       const fields = Object.keys(record)
       const placeholders = fields.map(() => '?').join(', ')
       const values = Object.values(record)
@@ -673,6 +801,25 @@ export class DatabaseManager {
     } catch (err) {
       console.error(`Failed to apply sync update to SQLite table ${tableName}:`, err)
     }
+  }
+
+  recoverInterruptedSyncOperations(): number {
+    try {
+      const result = this.db.prepare(`
+        UPDATE local_sync_queue SET status = 'retrying',
+          last_error = COALESCE(last_error, 'Previous sync was interrupted.'),
+          next_attempt_at = datetime('now')
+        WHERE status IN ('uploading', 'downloading')
+      `).run()
+      return result.changes
+    } catch (err) {
+      console.error('Failed to recover interrupted sync operations:', err)
+      return 0
+    }
+  }
+
+  private isSyncableTable(tableName: string): boolean {
+    return ['clients', 'documents', 'tasks', 'users'].includes(tableName)
   }
 
   // Conversion History

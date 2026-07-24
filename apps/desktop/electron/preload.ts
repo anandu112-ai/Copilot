@@ -132,6 +132,11 @@ contextBridge.exposeInMainWorld('electronAPI', {
     // Sync logs
     getSyncLogs: (limit?: number) => ipcRenderer.invoke('db:get-sync-logs', limit),
     insertSyncLog: (log: any) => ipcRenderer.invoke('db:insert-sync-log', log),
+    getSyncQueueSummary: () => ipcRenderer.invoke('db:get-sync-queue-summary'),
+    getSyncConflicts: () => ipcRenderer.invoke('db:get-sync-conflicts'),
+    insertSyncConflict: (conflict: any) => ipcRenderer.invoke('db:insert-sync-conflict', conflict),
+    resolveSyncConflict: (id: string, resolution: string, status?: string) => ipcRenderer.invoke('db:resolve-sync-conflict', id, resolution, status),
+    updateSyncQueueStatus: (queueId: number, status: string, lastError?: string | null) => ipcRenderer.invoke('db:update-sync-queue-status', queueId, status, lastError),
 
     // AI Automation Rules
     getAiAutomationRules: () => ipcRenderer.invoke('db:get-ai-automation-rules'),
@@ -207,6 +212,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
 
     // Sync helpers
     getPendingSyncQueue: () => ipcRenderer.invoke('db:get-pending-sync-queue'),
+    recoverInterruptedSyncOperations: () => ipcRenderer.invoke('db:recover-interrupted-sync-operations'),
     getRecordData: (tableName: string, localId: string) => ipcRenderer.invoke('db:get-record-data', tableName, localId),
     updateRecordSyncStatus: (tableName: string, localId: string, cloudId: string, syncStatus: string, versionNumber: number, lastSyncedAt: string) =>
       ipcRenderer.invoke('db:update-record-sync-status', tableName, localId, cloudId, syncStatus, versionNumber, lastSyncedAt),

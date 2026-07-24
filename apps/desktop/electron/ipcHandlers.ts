@@ -251,6 +251,20 @@ export function registerIpcHandlers(
     dbManager.insertSyncLog(log)
     return { success: true }
   })
+  ipcMain.handle('db:get-sync-queue-summary', () => dbManager.getSyncQueueSummary())
+  ipcMain.handle('db:get-sync-conflicts', () => dbManager.getSyncConflicts())
+  ipcMain.handle('db:insert-sync-conflict', (_, conflict: any) => {
+    dbManager.insertSyncConflict(conflict)
+    return { success: true }
+  })
+  ipcMain.handle('db:resolve-sync-conflict', (_, id: string, resolution: string, status?: string) => {
+    dbManager.resolveSyncConflict(id, resolution, status)
+    return { success: true }
+  })
+  ipcMain.handle('db:update-sync-queue-status', (_, queueId: number, status: string, lastError?: string | null) => {
+    dbManager.updateSyncQueueStatus(queueId, status, lastError)
+    return { success: true }
+  })
 
   // ── AI Automation Rules ──
   ipcMain.handle('db:get-ai-automation-rules', () => {
@@ -375,6 +389,7 @@ export function registerIpcHandlers(
 
   // ── Sync Engine Helpers ───────────────────────────────────────────────────
   ipcMain.handle('db:get-pending-sync-queue', () => dbManager.getPendingSyncQueue())
+  ipcMain.handle('db:recover-interrupted-sync-operations', () => ({ recovered: dbManager.recoverInterruptedSyncOperations() }))
   ipcMain.handle('db:get-record-data', (_, tableName: string, localId: string) => dbManager.getRecordData(tableName, localId))
   ipcMain.handle('db:update-record-sync-status', (
     _,

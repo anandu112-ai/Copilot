@@ -143,7 +143,7 @@ function AppInner() {
 
 // ── Root App component ────────────────────────────────────────────────────────
 export default function App() {
-  const { loadSettings, theme } = useSettingsStore()
+  const { loadSettings, theme, syncEnabled, syncInterval } = useSettingsStore()
   const { isAuthenticated, sessionToken, logout, setAuth, setLoading } = useAuthStore()
 
   const [serviceStatus, setServiceStatus] = useState<'checking' | 'ready' | 'failed'>('checking')
@@ -175,15 +175,15 @@ export default function App() {
 
   // Initialize and tear down background synchronization service loop
   useEffect(() => {
-    if (isAuthenticated) {
-      syncService.start(15) // sync every 15 minutes
+    if (isAuthenticated && syncEnabled) {
+      syncService.start(Math.max(1, Number(syncInterval) || 15))
     } else {
       syncService.stop()
     }
     return () => {
       syncService.stop()
     }
-  }, [isAuthenticated])
+  }, [isAuthenticated, syncEnabled, syncInterval])
 
   // Verify session token on boot via IPC
   useEffect(() => {

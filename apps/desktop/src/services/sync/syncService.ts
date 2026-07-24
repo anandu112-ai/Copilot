@@ -1,20 +1,32 @@
 import { getSupabaseClient, isSupabaseConfigured } from '../supabase/supabaseClient'
+import { summarizeSyncQueue } from './syncQueueUtils'
 
 export interface SyncStatus {
   isSyncing: boolean
   lastSyncedAt: Date | null
   error: string | null
   pendingItemsCount: number
+  uploadingCount: number
+  downloadingCount: number
+  conflictCount: number
+  failedCount: number
+  lastActivity: string | null
 }
 
 type SyncStatusListener = (status: SyncStatus) => void
 
 let syncTimer: NodeJS.Timeout | null = null
+let runCancelled = false
 let currentStatus: SyncStatus = {
   isSyncing: false,
   lastSyncedAt: null,
   error: null,
   pendingItemsCount: 0,
+  uploadingCount: 0,
+  downloadingCount: 0,
+  conflictCount: 0,
+  failedCount: 0,
+  lastActivity: null,
 }
 
 const listeners = new Set<SyncStatusListener>()
@@ -50,27 +62,38 @@ export const syncService = {
       return { success: false, error: 'Synchronization already in progress' }
     }
 
+    if (!navigator.onLine) {
+      currentStatus.error = 'Offline. Changes will sync when connectivity returns.'
+      currentStatus.lastActivity = 'offline'
+      notifyListeners()
+      return { success: false, error: currentStatus.error }
+    }
+
     if (!isSupabaseConfigured()) {
-      return { success: false, error: 'Supabase is not configured' }
+      currentStatus.error = 'Supabase is not configured'
+      currentStatus.lastActivity = 'config-missing'
+      notifyListeners()
+      return { success: false, error: currentStatus.error }
     }
 
     const supabase = getSupabaseClient()
     if (!supabase) {
-      return { success: false, error: 'Failed to connect to Supabase client' }
+      currentStatus.error = 'Failed to connect to Supabase client'
+      currentStatus.lastActivity = 'client-error'
+      notifyListeners()
+      return { success: false, error: currentStatus.error }
     }
 
     currentStatus.isSyncing = true
+    runCancelled = false
     currentStatus.error = null
+    currentStatus.lastActivity = 'syncing'
     notifyListeners()
 
     try {
-      // 1. Push local edits to Supabase
       const pushResult = await this.pushLocalChanges()
-      
-      // 2. Pull remote edits from Supabase
       const pullResult = await this.pullRemoteChanges()
 
-      // 3. Log the sync result in SQLite history
       if (window.electronAPI?.db) {
         await window.electronAPI.db.insertSyncLog({
           id: `sync-log-${Date.now()}`,
@@ -82,13 +105,14 @@ export const syncService = {
       }
 
       currentStatus.lastSyncedAt = new Date()
+      currentStatus.lastActivity = 'synced'
       localStorage.setItem('ca-copilot-last-synced-at', currentStatus.lastSyncedAt.toISOString())
-      
       return { success: true }
     } catch (err: any) {
       console.error('Synchronization failed:', err)
       currentStatus.error = err.message || 'Sync failed.'
-      
+      currentStatus.lastActivity = 'failed'
+
       if (window.electronAPI?.db) {
         await window.electronAPI.db.insertSyncLog({
           id: `sync-log-${Date.now()}`,
@@ -121,12 +145,19 @@ export const syncService = {
 
     let syncedCount = 0
 
+    const queueItems = await db.getPendingSyncQueue()
+    const queueSummary = summarizeSyncQueue(queueItems as Array<{ status?: string }>)
+    currentStatus.pendingItemsCount = queueSummary.pendingCount
+    currentStatus.failedCount = queueSummary.failedCount
+    currentStatus.conflictCount = queueSummary.conflictCount
+
     // Fetch the active user to bind user tags
     const session = localStorage.getItem('ca-copilot-auth-session')
     const activeUserId = session ? JSON.parse(session).user?.uuid : null
     const activeUserOrgId = session ? JSON.parse(session).user?.organization_id : null
 
     for (const item of queue) {
+      if (runCancelled) break
       const record = await db.getRecordData(item.table_name, item.record_local_id)
       
       if (!record) {
@@ -136,6 +167,8 @@ export const syncService = {
       }
 
       try {
+        await db.updateSyncQueueStatus(item.id, 'uploading').catch(console.error)
+
         const cloudPayload = {
           ...record,
           organization_id: record.organization_id || activeUserOrgId,
@@ -189,7 +222,6 @@ export const syncService = {
           throw new Error(response.error.message)
         }
 
-        // Successfully synced!
         const cloudRecord = response.data?.[0]
         if (cloudRecord) {
           await db.updateRecordSyncStatus(
@@ -202,6 +234,7 @@ export const syncService = {
           )
         }
 
+        await db.updateSyncQueueStatus(item.id, 'synced').catch(console.error)
         await db.deleteSyncQueueEntry(item.id)
         syncedCount++
       } catch (err: any) {
@@ -219,22 +252,21 @@ export const syncService = {
   async pullRemoteChanges(): Promise<{ success: boolean; pulledCount: number }> {
     const db = window.electronAPI.db
     const supabase = getSupabaseClient()
-    
+
     if (!supabase) {
       return { success: true, pulledCount: 0 }
     }
 
     const tables = ['clients', 'documents', 'tasks']
     let pulledCount = 0
+    currentStatus.downloadingCount = 1
 
-    // Fetch the last pull date
     const lastPullTimeStr = localStorage.getItem('ca-copilot-last-synced-at')
-    const lastPullQuery = lastPullTimeStr 
-      ? new Date(lastPullTimeStr).toISOString() 
+    const lastPullQuery = lastPullTimeStr
+      ? new Date(lastPullTimeStr).toISOString()
       : new Date(0).toISOString()
 
     for (const table of tables) {
-      // Query remote database for entries modified since last sync
       const { data: remoteRecords, error } = await supabase
         .from(table)
         .select('*')
@@ -253,7 +285,6 @@ export const syncService = {
         const localRecord = await db.getRecordData(table, remoteRecord.id)
 
         if (!localRecord) {
-          // Record doesn't exist locally, insert it directly
           const localInsertPayload = {
             ...remoteRecord,
             cloud_id: remoteRecord.id,
@@ -262,34 +293,34 @@ export const syncService = {
           }
           await db.applySyncUpdate(table, localInsertPayload)
           pulledCount++
-        } else {
-          // Compare versions and timestamps to resolve conflicts
-          const localVer = localRecord.version_number || 1
-          const remoteVer = remoteRecord.version_number || 1
-          
-          if (remoteVer > localVer) {
-            if (localRecord.sync_status === 'synced') {
-              // Safe to overwrite local cache
-              const localUpdatePayload = {
-                ...remoteRecord,
-                cloud_id: remoteRecord.id,
-                sync_status: 'synced',
-                last_synced_at: new Date().toISOString(),
-              }
-              await db.applySyncUpdate(table, localUpdatePayload)
-              pulledCount++
-            } else {
-              // Mutation exists on both: Conflict!
-              console.warn(`Conflict detected in table ${table} on record ${remoteRecord.id}`)
-              await db.updateRecordSyncStatus(
-                table,
-                localRecord.id,
-                remoteRecord.id,
-                'conflict',
-                localVer,
-                localRecord.last_synced_at || ''
-              )
+          continue
+        }
+
+        const localVer = localRecord.version_number || 1
+        const remoteVer = remoteRecord.version_number || 1
+
+        if (remoteVer > localVer) {
+          const isLocalDirty = ['pending_upload', 'conflict', 'retrying'].includes(localRecord.sync_status)
+          if (!isLocalDirty) {
+            const localUpdatePayload = {
+              ...remoteRecord,
+              cloud_id: remoteRecord.id,
+              sync_status: 'synced',
+              last_synced_at: new Date().toISOString(),
             }
+            await db.applySyncUpdate(table, localUpdatePayload)
+            pulledCount++
+          } else {
+            const conflictId = `conflict-${table}-${remoteRecord.id}-${Date.now()}`
+            await db.insertSyncConflict({
+              id: conflictId,
+              tableName: table,
+              recordId: remoteRecord.id,
+              localPayload: localRecord,
+              remotePayload: remoteRecord,
+            })
+            await db.updateRecordSyncStatus(table, localRecord.id, remoteRecord.id, 'conflict', localVer, localRecord.last_synced_at || '')
+            currentStatus.conflictCount += 1
           }
         }
       }
@@ -305,9 +336,14 @@ export const syncService = {
     if (window.electronAPI?.db) {
       try {
         const queue = await window.electronAPI.db.getPendingSyncQueue()
-        currentStatus.pendingItemsCount = queue.length
+        const summary = summarizeSyncQueue(queue as Array<{ status?: string }>)
+        currentStatus.pendingItemsCount = summary.pendingCount
+        currentStatus.uploadingCount = summary.uploadingCount
+        currentStatus.downloadingCount = summary.downloadingCount
+        currentStatus.failedCount = summary.failedCount
+        currentStatus.conflictCount = summary.conflictCount
         notifyListeners()
-        return queue.length
+        return summary.pendingCount
       } catch {
         return 0
       }
@@ -320,21 +356,20 @@ export const syncService = {
    */
   start(intervalMinutes = 15) {
     this.stop()
-    
-    // Initial sync check
-    this.sync().catch(console.error)
 
-    // Setup periodic sync loop
+    // A crash or app close must not leave work permanently marked uploading.
+    // Recover before the first run so a previously claimed item is eligible again.
+    const recover = window.electronAPI?.db.recoverInterruptedSyncOperations()
+    Promise.resolve(recover).catch(console.error).finally(() => this.sync().catch(console.error))
+
     syncTimer = setInterval(() => {
       if (navigator.onLine) {
         this.sync().catch(console.error)
       }
-    }, intervalMinutes * 60 * 1000)
+    }, Math.max(10000, intervalMinutes * 60 * 1000))
 
-    // Listen for connection changes
     window.addEventListener('online', this.handleConnectionRestore)
-    
-    // Active count checks
+    window.addEventListener('offline', this.handleConnectionLost)
     this.updatePendingCount().catch(console.error)
   },
 
@@ -342,15 +377,23 @@ export const syncService = {
    * Stop synchronization timer loops
    */
   stop() {
+    runCancelled = true
     if (syncTimer) {
       clearInterval(syncTimer)
       syncTimer = null
     }
     window.removeEventListener('online', this.handleConnectionRestore)
+    window.removeEventListener('offline', this.handleConnectionLost)
   },
 
   handleConnectionRestore() {
     console.log('Internet connected. Triggering auto synchronization...')
     syncService.sync().catch(console.error)
+  },
+
+  handleConnectionLost() {
+    currentStatus.error = 'Offline. Local changes are queued pending reconnect.'
+    currentStatus.lastActivity = 'offline'
+    notifyListeners()
   }
 }

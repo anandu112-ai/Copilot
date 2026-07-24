@@ -175,6 +175,12 @@ export interface ElectronAPI {
 
     // Sync helpers
     getPendingSyncQueue: () => Promise<any[]>
+    recoverInterruptedSyncOperations: () => Promise<{ recovered: number }>
+    getSyncQueueSummary: () => Promise<any>
+    getSyncConflicts: () => Promise<any[]>
+    insertSyncConflict: (conflict: any) => Promise<{ success: boolean }>
+    resolveSyncConflict: (id: string, resolution: string, status?: string) => Promise<{ success: boolean }>
+    updateSyncQueueStatus: (queueId: number, status: string, lastError?: string | null) => Promise<{ success: boolean }>
     getRecordData: (tableName: string, localId: string) => Promise<any>
     updateRecordSyncStatus: (tableName: string, localId: string, cloudId: string, syncStatus: string, versionNumber: number, lastSyncedAt: string) => Promise<{ success: boolean }>
     updateSyncQueueError: (queueId: number, lastError: string) => Promise<{ success: boolean }>

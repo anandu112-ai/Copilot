@@ -1,8 +1,9 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Settings, Sun, Moon, Monitor, Folder, Info, Database, RefreshCcw, Cloud, Wifi, Check, AlertCircle, Loader2, Lock, Eye, EyeOff } from 'lucide-react'
 import { useSettingsStore } from '../stores/settingsStore'
 import { cn } from '../utils/cn'
 import { testSupabaseConnection } from '../services/supabase/supabaseClient'
+import { syncService } from '../services/sync/syncService'
 import toast from 'react-hot-toast'
 
 type ThemeValue = 'dark' | 'light' | 'system'
@@ -27,6 +28,9 @@ export default function SettingsPage() {
   const [connectionStatus, setConnectionStatus] = useState<'idle' | 'success' | 'failed'>('idle')
   const [connectionError, setConnectionError] = useState('')
   const [showAnonKey, setShowAnonKey] = useState(false)
+  const [syncStatus, setSyncStatus] = useState(syncService.getStatus())
+
+  useEffect(() => syncService.subscribe(setSyncStatus), [])
 
   const sections = [
     { id: 'appearance', label: 'Appearance', icon: Sun },
@@ -304,6 +308,52 @@ export default function SettingsPage() {
                         <span className="truncate">{connectionError}</span>
                       </div>
                     )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="card p-5 space-y-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <h3 className="text-sm font-semibold text-surface-200">Offline Sync Health</h3>
+                    <p className="text-xs text-surface-500 mt-0.5">Local-first sync queue, retries, and conflict tracking</p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => syncService.sync().catch(console.error)}
+                    className="btn-secondary gap-1.5 text-xs"
+                  >
+                    <RefreshCcw size={13} />
+                    Run Sync
+                  </button>
+                </div>
+
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ['Pending', syncStatus.pendingItemsCount],
+                    ['Uploading', syncStatus.uploadingCount],
+                    ['Conflicts', syncStatus.conflictCount],
+                    ['Failed', syncStatus.failedCount],
+                  ].map(([label, value]) => (
+                    <div key={label} className="rounded-lg border border-surface-800 bg-surface-900/70 p-3">
+                      <div className="text-[11px] uppercase tracking-wider text-surface-500">{label}</div>
+                      <div className="mt-1 text-lg font-semibold text-surface-100">{value}</div>
+                    </div>
+                  ))}
+                </div>
+
+                <div className="rounded-lg border border-surface-800 bg-surface-900/70 p-3 text-xs text-surface-400">
+                  <div className="flex items-center justify-between">
+                    <span>Status</span>
+                    <span className="text-surface-200">{syncStatus.isSyncing ? 'Syncing now' : syncStatus.lastActivity || 'Idle'}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span>Last sync</span>
+                    <span className="text-surface-200">{syncStatus.lastSyncedAt ? new Date(syncStatus.lastSyncedAt).toLocaleString() : 'Never'}</span>
+                  </div>
+                  <div className="flex items-center justify-between mt-2">
+                    <span>Connectivity</span>
+                    <span className={cn(navigator.onLine ? 'text-green-400' : 'text-amber-400')}>{navigator.onLine ? 'Online' : 'Offline'}</span>
                   </div>
                 </div>
               </div>
