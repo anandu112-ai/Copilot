@@ -17,7 +17,7 @@ import LoginPage from './pages/LoginPage'
 import RegisterPage from './pages/RegisterPage'
 
 // Pages
-import DashboardPage from './pages/DashboardPage'
+import DashboardPage from './pages/Dashboard/DashboardPage'
 import ClientsPage from './pages/ClientsPage'
 import DocumentAiPage from './pages/DocumentAiPage'
 import InvoiceProcessingPage from './pages/InvoiceProcessingPage'
